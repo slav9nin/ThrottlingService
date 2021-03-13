@@ -6,14 +6,10 @@ import com.secretcompany.exception.NullableUserDataException;
 import com.secretcompany.service.SlaService;
 import com.secretcompany.service.ThrottlingService;
 import lombok.NonNull;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.data.util.Optionals;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -21,11 +17,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.secretcompany.config.ThrottlingConfiguration.FORK_JOIN_POOL;
-import static com.secretcompany.service.ThrottlingConstants.LRU_MAX_CACHE_CAPACITY;
 import static com.secretcompany.service.ThrottlingConstants.UNAUTHORIZED_USER_ID;
 
 /**
@@ -65,7 +57,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         this.slaService = slaService;
 
         //populate cache to avoid returning null
-        tokenToUserDataMap.put(DUMMY_KEY, new UserData(getSecondFromEpoch(), createGuestSla()));
+        tokenToUserDataMap.put(DUMMY_KEY, new UserData(getSecondFromEpoch(), createGuestSla(), guestRps));
     }
 
     //TODO replace synchronized with fine-grained lock implementation. Consider using concurrent structures, atomics.
@@ -91,50 +83,11 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     }
                 } else {
                     //todo createGuestSla OR createAuthorizedSlaWithGuestRps???
-                    return createGuestSla(secondFromEpoch);
+//                    return createGuestSla(secondFromEpoch);
+                    return authorizedDefaultSla(secondFromEpoch);
                 }
             });
-            //todo
 
-
-            UserData userData = tokenToUserDataMap.get(token);
-            if (Objects.nonNull(userData)) {
-                //todo
-            } else {
-                //cache is empty for particular token
-                // if there is no active request to SlaService for particular token -> make a request to SlaService
-
-//                requestToSlaPerToken.computeIfAbsent(token, (t, op) -> {
-//                   op.
-//                });
-
-                Optional<CompletableFuture<Sla>> activeSlaRequest = Optional.ofNullable(requestToSlaPerToken.get(token));
-                Optionals.ifPresentOrElse(activeSlaRequest, ar -> {
-                    //skip additional request to SlaService due to existing one.
-                    //create GuestSla
-                    if (ar.isDone()) {
-                        ar.thenAccept(sla -> {
-                            UserData returnedSla = new UserData(secondFromEpoch, sla);
-                            int rps = sla.getRps();
-                            tokenToUserDataMap.put(token, returnedSla);
-                        });
-                    } else {
-                        UserData temporalUserData = createGuestSla(secondFromEpoch);
-                    }
-                }, () -> {
-                    // no sla, no active requests to SlaService for particular token. Make attempt to retrieve Sla
-                    // create request to Sla
-                    // enqueue future
-                    UserData guestUserData = createGuestSla(secondFromEpoch);
-                    CompletableFuture<Sla> slaCompletableFuture = slaService.getSlaByToken(token);
-                    requestToSlaPerToken.put(token, slaCompletableFuture);
-                });
-
-//                CompletableFuture.supplyAsync(() -> slaService.getSlaByToken(token));
-            }
-            //request to SlaService
-//            CompletableFuture<CompletableFuture<Sla>> completableFutureCompletableFuture =
-//                    CompletableFuture.supplyAsync(() -> slaService.getSlaByToken(token));
 
 
         } else {
@@ -162,10 +115,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     }
 
     private long checkRemainingRps(UserData newUserData) {
-//        return Optional.ofNullable(newUserData)
-//                .map(UserData::getSla)
-//                .map(Sla::getRps)
-//                .orElseThrow(NullableUserDataException::new);
         return Optional.ofNullable(newUserData)
                 .map(UserData::getRps)
                 .orElseThrow(NullableUserDataException::new);
@@ -175,6 +124,11 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     private UserData createGuestSla(long secondFromEpoch) {
         Sla guestSla = createGuestSla();
         return new UserData(secondFromEpoch, guestSla, guestRps);
+    }
+
+    private UserData authorizedDefaultSla(long secondFromEpoch) {
+        Sla authorizedDefaultSla = createAuthorizedDefaultSla();
+        return new UserData(secondFromEpoch, authorizedDefaultSla, guestRps);
     }
 
     /**
@@ -188,6 +142,15 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
     private Sla createGuestSla() {
         return new Sla(UNAUTHORIZED_USER_ID, guestRps);
+    }
+
+    /**
+     * Authorized users should not compete with non-authorized. Each authorized user w/o Sla from SlaService
+     * has each own default GuestRPS.
+     * @return Sla for authorized user with random UUID and GuestRPS to prevent competing with non-authorized users.
+     */
+    private Sla createAuthorizedDefaultSla() {
+        return new Sla(UUID.randomUUID().toString(), guestRps);
     }
 
     @VisibleForTesting
