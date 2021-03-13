@@ -2,10 +2,10 @@ package com.secretcompany.service;
 
 /**
  * Concerns regarding ThrottlingService. How we determine User if token is null? We cannot do it.
- *   If different users submit nullable tokens we cannot distinguish them. Based on it, we can handle it only if:
- *   1. Token is NotNull and contains userId. String token = "<userUUID>:<token>". isRequestAllowed(@NotNull String token)
- *   2. Change method signature and add final UserId. isRequestAllowed(String token, @NotNull String userId)
- *   I prefer the last one! Any objections?
+ *   If method signature for (isRequestAllowed) cannot be changed -> all we can it's:
+ *   restrict RPS for all unauthorized users(w/o tokens).
+ *   For ex.: If GuestRPS == 20 and 21 users tries to access to ThrottlingService within particular second,
+ *   only first 20 can do it and the last one will be looser.
  */
 @FunctionalInterface
 public interface ThrottlingService {
@@ -13,5 +13,5 @@ public interface ThrottlingService {
     /**
      * @return true if request is within allowed request per second (RPS) or false otherwise
      */
-    boolean isRequestAllowed(final String token, final String userId);
+    boolean isRequestAllowed(final String token);
 }

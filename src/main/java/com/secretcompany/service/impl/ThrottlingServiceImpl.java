@@ -4,16 +4,14 @@ import com.google.common.annotations.VisibleForTesting;
 import com.secretcompany.dto.Sla;
 import com.secretcompany.service.ThrottlingService;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
-import org.springframework.data.util.Optionals;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 import static com.secretcompany.service.ThrottlingConstants.LRU_MAX_CACHE_CAPACITY;
-import static com.secretcompany.service.ThrottlingConstants.USER_ID_IS_REQUIRED;
 
 /**
  * ThrottlingServiceImpl Rules:
@@ -31,6 +29,10 @@ import static com.secretcompany.service.ThrottlingConstants.USER_ID_IS_REQUIRED;
  * ThrottlingServiceImpl responsibility:
  * Per token determine user and remaining RPS
  * Question: if token is null or blank what we should do in that case?
+ * Possible answers:
+ * 1. Token should contain userId and should not be null: String token = "<userId>:<token>";
+ * 2. ThrottlingService.isRequestAllowed should have additional parameter String userId.
+ * I prefer the last one.
  */
 public class ThrottlingServiceImpl implements ThrottlingService {
     private final int guestRps;
@@ -38,36 +40,35 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     // TreeMap is red-black tree (search tree). We cannot use it due to unknown amount of users.
     // So it can lead to re-balancing of tree too many times. That's why using hash map.
     // Also, we want to use it as a CACHE. LRU cache (LinkedHashMap) is appropriate here.
-    private final Map<String, Pair<String,Sla>> tokenToUserSlaMap = createLRUCache(LRU_MAX_CACHE_CAPACITY);
-//    private final Map<String, String> tokenToUserMap = createLRUCache(LRU_MAX_CACHE_CAPACITY);
+//    private final Map<String, Pair<String,Sla>> tokenToUserSlaMap = createLRUCache(LRU_MAX_CACHE_CAPACITY);
+
+    private final Map<String, List<String>> userToTokenList = new HashMap<>();
+    private final Map<String, Sla> userToSlaMap = createLRUCache(LRU_MAX_CACHE_CAPACITY);
 
     public ThrottlingServiceImpl(int guestRps) {
         this.guestRps = guestRps;
     }
 
+    //TODO replace synchronized with fine-grained lock implementation. Considering using concurrent structures, atomics.
     @Override
-    public synchronized boolean isRequestAllowed(final String token, final String userId) {
-        Objects.requireNonNull(userId, USER_ID_IS_REQUIRED);
+    public synchronized boolean isRequestAllowed(final String token) {
         Optional<String> userToken = Optional.ofNullable(token)
                 .filter(StringUtils::isNotBlank);
-
-        Optionals.ifPresentOrElse(userToken, this::retrieveSla, this::generateNewRecord);
 
         //todo
         return false;
     }
 
-    private Sla retrieveSla(final String token) {
-        //todo
-        throw new UnsupportedOperationException();
-//        tokenToUserSlaMap.computeIfAbsent(token, (t, s) -> {
+    private Sla retrieveSla(final String token, final String userId) {
+//        userToSlaMap.computeIfAbsent(token, (t, s) -> {
 //            if (StringUtils.isBlank(t)) {
-//                return new Sla(UUID.randomUUID().toString(), guestRps);
+//                return new Sla(, guestRps);
 //            }
 //        });
+        throw new UnsupportedOperationException("retrieveSla() not implemented yet");
     }
 
-    private void generateNewRecord() {
+    private void generateNewRecord(final String userId) {
         //TODO in case token is blank
     }
 

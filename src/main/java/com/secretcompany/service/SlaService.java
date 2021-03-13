@@ -9,5 +9,5 @@ import java.util.concurrent.CompletableFuture;
  */
 @FunctionalInterface
 public interface SlaService {
-    CompletableFuture<Sla> getSlaByToken(String token);
+    CompletableFuture<Sla> getSlaByToken(final String token);
 }

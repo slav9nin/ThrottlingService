@@ -50,23 +50,19 @@
 чем включающее все требования но не работающее.
 
 ## Implementation notes
+* Task description contains unaccurate requirement:
+  Все неавторизованные пользователи лимитированы GuestRPS,
+  (передается параметром при создании ThrottlingServiceImpl, может быть равен для примера 20
+  или любое другое целое число).
+  How I understand it:
+  1. if method signature contains only TokenId -> we cannot distinguish different users. 
+  So, we restrict GuestRPS(by default == 20) for all users which could not provide token.
+     So, if GuestRPS==20, and 21 users try to access to our ThrottlingService, only first 20 can do it.
+  2. If we can change method signature and add to isRequestAllowed String userId param - we can support
+     different users.
 * Our solution should provide RPS which allows users to interact with third-party REST service.
   Our service should have response time ~ 5ms. Sla service ~ 200-300 ms. So, we should return RPS in 5 ms
   even if SlaCache doesn't have value for this user. Of course,
   during waiting SlaService, user can access to us multiple times,
   so we have to support our RPS while SlaService respond to us with available RPS and compare 2 values
   and sync them.
-* Concerns regarding ThrottlingService. How we determine User if token is null? We cannot do it.
-  If different users submit nullable tokens we cannot distinguish them. Based on it, we can handle it only
-  if and only if:
-  1. Token is NotNull and contains userId.
-  2. Change method signature and add final UserId. 
-  I prefer the last one! Any objections?
-* Using Lombok? Not necessary
-* Do not distinguish modules with Interfaces and implementation. Ideally if we are going to
-  have different implementations/mocks/stubs and etc it would be better to move interfaces in separate 
-  module. ( if we follow multi-module /microservices oriented architecture)
-* (mock, service, dto) packages in one module to simplify development of MVP
-* ThrottlingService.isRequestAllowed(String token) - intentional decision. Do not use Optional in
-  method signature
-* one module, no parent pom. That's why explicitly defined versions in dependency. (No dependencyManagement)
