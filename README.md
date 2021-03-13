@@ -4,6 +4,7 @@
 * [Target] (#target)
 * [Throttling Service Rules] (#throttlingServiceRules)
 * [Acceptance criteria] (#acceptanceCriteria)
+* [Implementation notes] (#implementationNotes)
 
 ## Overview
 
@@ -47,3 +48,11 @@
 Можно использовать любые вспомогательные библиотеки, кроме собственно являющихся 
 реализацией подобного сервиса. Лучше написать решение с минимальным функционалом но работающее, 
 чем включающее все требования но не работающее.
+
+## Implementation notes
+
+* Using Lombok? Not necessary
+* Do not distinguish modules with Interfaces and implementation. Ideally if we are going to
+  have different implementations/mocks/stubs and etc it would be better to move interfaces in separate 
+  module. ( if we follow multi-module /microservices oriented architecture)
+* (mock, service, dto) packages in one module to simplify development of MVP
