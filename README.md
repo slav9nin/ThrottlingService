@@ -56,3 +56,6 @@
   have different implementations/mocks/stubs and etc it would be better to move interfaces in separate 
   module. ( if we follow multi-module /microservices oriented architecture)
 * (mock, service, dto) packages in one module to simplify development of MVP
+* ThrottlingService.isRequestAllowed(String token) - intentional decision. Do not use Optional in
+  method signature
+* one module, no parent pom. That's why explicitly defined versions in dependency. (No dependencyManagement)
