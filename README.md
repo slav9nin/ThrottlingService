@@ -50,7 +50,18 @@
 чем включающее все требования но не работающее.
 
 ## Implementation notes
-
+* Our solution should provide RPS which allows users to interact with third-party REST service.
+  Our service should have response time ~ 5ms. Sla service ~ 200-300 ms. So, we should return RPS in 5 ms
+  even if SlaCache doesn't have value for this user. Of course,
+  during waiting SlaService, user can access to us multiple times,
+  so we have to support our RPS while SlaService respond to us with available RPS and compare 2 values
+  and sync them.
+* Concerns regarding ThrottlingService. How we determine User if token is null? We cannot do it.
+  If different users submit nullable tokens we cannot distinguish them. Based on it, we can handle it only
+  if and only if:
+  1. Token is NotNull and contains userId.
+  2. Change method signature and add final UserId. 
+  I prefer the last one! Any objections?
 * Using Lombok? Not necessary
 * Do not distinguish modules with Interfaces and implementation. Ideally if we are going to
   have different implementations/mocks/stubs and etc it would be better to move interfaces in separate 
