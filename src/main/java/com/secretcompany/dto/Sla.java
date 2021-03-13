@@ -3,6 +3,9 @@ package com.secretcompany.dto;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 
+/**
+ * Immutable
+ */
 public class Sla {
     private final String user;
     private final int rps;

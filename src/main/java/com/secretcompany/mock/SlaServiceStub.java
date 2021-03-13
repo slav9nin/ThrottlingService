@@ -1,5 +1,6 @@
 package com.secretcompany.mock;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.secretcompany.dto.Sla;
 import com.secretcompany.service.SlaService;
 
@@ -7,6 +8,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.locks.LockSupport;
 
 public class SlaServiceStub implements SlaService {
 
@@ -22,14 +27,32 @@ public class SlaServiceStub implements SlaService {
     private static final int USER_2_MAX_RPS = 16;
 
     private final Map<String, Sla> predefinedMapping;
+    private final ExecutorService threadPool;
 
     public SlaServiceStub() {
+        ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder().setNameFormat("SlaWorkerThread-%s");
+        threadPool = Executors
+                .newFixedThreadPool(Runtime.getRuntime().availableProcessors(), threadFactoryBuilder.build());
         predefinedMapping = initializeStub();
     }
 
     @Override
     public CompletableFuture<Sla> getSlaByToken(final String token) {
-        return CompletableFuture.completedFuture(predefinedMapping.get(token));
+        return CompletableFuture.supplyAsync(() -> retrieveSla(token), threadPool);
+    }
+
+    /**
+     * Simulate long running operation
+     * @param token - User token
+     * @return Sla for particular token
+     */
+    private Sla retrieveSla(final String token) {
+        ThreadLocalRandom threadLocalRandom = ThreadLocalRandom.current();
+        int delay = threadLocalRandom.nextInt(300);
+
+        LockSupport.parkNanos(delay * 1000 * 1000);
+
+        return predefinedMapping.get(token);
     }
 
     private Map<String, Sla> initializeStub() {

@@ -1,19 +1,30 @@
 package com.secretcompany.service;
 
-import com.google.common.collect.Lists;
-import com.secretcompany.service.impl.ThrottlingServiceImpl;
 import org.junit.Test;
 
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.time.Clock;
+import java.time.Instant;
 
 public class ThrottlingServiceTest {
 
     private static final int GUEST_RPS = 15;
     private static final int REAL_RPS = 25;
 
-    private ThrottlingService throttlingService= new ThrottlingServiceImpl(GUEST_RPS);
+//    private ThrottlingService throttlingService= new ThrottlingServiceImpl(GUEST_RPS);
+
+    @Test
+    public void name() throws InterruptedException {
+        Clock clock = Clock.systemUTC();
+        Instant instant = Instant.now(clock);
+        long timeStampSeconds = instant.getEpochSecond();
+        System.out.println(timeStampSeconds);
+
+        Thread.sleep(1000);
+
+        Instant instant2 = Instant.now(clock);
+        long timeStampSeconds2 = instant2.getEpochSecond();
+        System.out.println(timeStampSeconds2);
+    }
 
     @Test
     public void shouldThrottleUnAuthorizedUser() {
