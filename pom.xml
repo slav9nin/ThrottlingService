@@ -22,6 +22,7 @@
         <junit.version>4.12</junit.version>
         <lombok.version>1.18.18</lombok.version>
         <immutable.version>2.8.2</immutable.version>
+        <assertj.core.version>3.18.0</assertj.core.version>
     </properties>
 
     <dependencies>
@@ -80,6 +81,13 @@
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest-core</artifactId>
             <version>${hamcrest.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${assertj.core.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

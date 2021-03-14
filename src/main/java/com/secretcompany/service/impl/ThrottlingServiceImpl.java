@@ -13,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -57,14 +58,13 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     // So it can lead to re-balancing of tree too many times. That's why using hash map.
     // Also, we want to use it as a CACHE. LRU cache (LinkedHashMap) is appropriate here.
 
-    //todo avoid single lock. Replace with org.springframework.cache.concurrent.ConcurrentMapCache
+    // TODO LinkedHashMap can be used as LRU Cache. But we don't have a concurrent version. Consider using org.springframework.cache.concurrent.ConcurrentMapCache
 //    private final Map<String, UserData> tokenToUserDataMap = Collections.synchronizedMap(createLRUCache(LRU_MAX_CACHE_CAPACITY));
     private final Map<String, UserData> tokenToUserDataMap = new ConcurrentHashMap<>();
 
     //to support RPS by UserName
     private final Map<String, Set<UserData>> userToUserDataSetMap = new ConcurrentHashMap<>();
 
-    //todo avoid non-thread safe data structures.
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
 
     public ThrottlingServiceImpl(int guestRps, SlaService slaService) {
@@ -99,6 +99,10 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             // do request to SlaService if no one exists for the same token.
             requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token))
                     .thenAcceptAsync(sla -> {
+                        if (Objects.isNull(sla)) {
+                            //Sla Service does not have any mappings for this token
+                            return;
+                        }
                         //when SlaService returns RealUserName we should
                         //  1. add entry to tokenToUserDataMap and then
                         //  2. remove token from DUMMY_KEY_FOR_AUTHORIZED_USERS!!!
@@ -171,7 +175,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     throw new MultipleValuesUserDataException();
                 }
 
-                Set<UserData> userDataSet = collect.get(userData.getSla());
+                Set<UserData> userDataSet = collect.values().stream().flatMap(Collection::stream).collect(toSet());
 
                 // each token of the same user has own RPS
                 final int existingRpsThroughAllTokenRps = userDataSet.stream()
@@ -187,7 +191,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
                 int total = maxRpsByUser * size;
 
-                return total - existingRpsThroughAllTokenRps < rps;
+                return total - existingRpsThroughAllTokenRps <= rps;
 
             } else {
                 // userData == null
@@ -211,10 +215,11 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     }
                 });
                 // all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
-                return checkRemainingRps(computedData) > 0;
+                return checkRemainingRps(computedData) >= 0;
             }
 
         } else {
+            System.out.println(Thread.currentThread().getName());
             // Token is absent. All unauthorized users compete for GuestRPS.
             // UserData always should not be null.
             @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> {
@@ -229,7 +234,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 }
             });
 
-            return checkRemainingRps(newUserData) > 0;
+            return checkRemainingRps(newUserData) >= 0;
         }
     }
 
@@ -289,10 +294,25 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         this.systemClock = systemClock;
     }
 
+    @VisibleForTesting
+    Map<String, UserData> getTokenToUserDataMap() {
+        return tokenToUserDataMap;
+    }
+
+    @VisibleForTesting
+    Map<String, Set<UserData>> getUserToUserDataSetMap() {
+        return userToUserDataSetMap;
+    }
+
+    @VisibleForTesting
+    Map<String, CompletableFuture<Sla>> getRequestToSlaPerToken() {
+        return requestToSlaPerToken;
+    }
+
     /**
      * Immutable. Sla is also immutable
      */
-    private static class UserData {
+    static class UserData {
         private final long secondId;
         private final Sla sla;
         private final int rps;

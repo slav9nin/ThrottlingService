@@ -6,33 +6,41 @@ import com.secretcompany.service.SlaService;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
 
+import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_1_1;
+import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_1_2;
+import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_2_1;
+import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_2_2;
+import static com.secretcompany.mock.SlaServiceStubConstants.USER_1;
+import static com.secretcompany.mock.SlaServiceStubConstants.USER_1_MAX_RPS;
+import static com.secretcompany.mock.SlaServiceStubConstants.USER_2;
+import static com.secretcompany.mock.SlaServiceStubConstants.USER_2_MAX_RPS;
+
 /**
  * Stub. For testing purpose.
  */
-public class SlaServiceStub implements SlaService {
+public class SlaServiceStubWithDelay implements SlaService {
 
-    private static final String TOKEN_1_1 = UUID.randomUUID().toString();
-    private static final String TOKEN_1_2 = UUID.randomUUID().toString();
-    private static final String TOKEN_2_1 = UUID.randomUUID().toString();
-    private static final String TOKEN_2_2 = UUID.randomUUID().toString();
-
-    private static final String USER_1 = "User1";
-    private static final String USER_2 = "User2";
-
-    private static final int USER_1_MAX_RPS = 8;
-    private static final int USER_2_MAX_RPS = 16;
-
+    private static final long DEFAULT_DELAY = 1000 * 1000 * 300;//within 300 ms
     private final Map<String, Sla> predefinedMapping;
     private final ExecutorService threadPool;
+    private final long slaDelay;
+    private final boolean randomizeDelay;
 
-    public SlaServiceStub() {
+    public SlaServiceStubWithDelay(long delay, boolean randomizeDelay) {
+        if (delay < 0) {
+            throw new RuntimeException("Delay should be >= 0. Zero delay means default one == 300 ms");
+        } else if (delay == 0) {
+            this.slaDelay = DEFAULT_DELAY;
+        } else {
+            this.slaDelay = delay;
+        }
+        this.randomizeDelay = randomizeDelay;
         ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder().setNameFormat("SlaWorkerThread-%s");
         threadPool = Executors
                 .newFixedThreadPool(Runtime.getRuntime().availableProcessors(), threadFactoryBuilder.build());
@@ -50,10 +58,15 @@ public class SlaServiceStub implements SlaService {
      * @return Sla for particular token
      */
     private Sla retrieveSla(final String token) {
-        ThreadLocalRandom threadLocalRandom = ThreadLocalRandom.current();
-        int delay = threadLocalRandom.nextInt(300);
+        long delay;
+        if (randomizeDelay) {
+            ThreadLocalRandom threadLocalRandom = ThreadLocalRandom.current();
+            delay = threadLocalRandom.nextLong(300) * 1000 * 1000; // within 300 ms
+        } else {
+            delay = slaDelay;
+        }
 
-        LockSupport.parkNanos(delay * 1000 * 1000);
+        LockSupport.parkNanos(delay);
 
         return predefinedMapping.get(token);
     }
