@@ -8,7 +8,7 @@ import com.secretcompany.exception.NullableUserDataException;
 import com.secretcompany.service.SlaService;
 import com.secretcompany.service.ThrottlingService;
 import lombok.NonNull;
-import org.apache.commons.collections4.IterableUtils;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.time.Clock;
@@ -122,7 +122,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                             } else {
                                 //no entry yet for this token
                                 //create new UserData with secondFromEpoch
-                                return new UserData(getSecondFromEpoch(), sla, sla.getRps(), ImmutableSet.of(token), sla.getUser());
+                                return new UserData(getSecondFromEpoch(), sla, sla.getRps(), ImmutableSet.of(token), sla.getUser());// or support secondFromEpoch ???
                             }
                         });
 
@@ -141,18 +141,19 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             if (Optional.ofNullable(userData).isPresent()) {
                 // retrieve user from Sla and then retrieve all entries by UserId.
                 @NonNull Set<UserData> userTokenData = userToUserDataSetMap.compute(userData.getSla().getUser(), (k, v) -> {
-                    if (v == null || IterableUtils.isEmpty(v)) {
+                    if (CollectionUtils.isEmpty(v)) {
                         Sla sla = userData.getSla();
                         String user = sla.getUser();
                         long secondId = userData.getSecondId();
-                        long rps = userData.getRps();
-                        Set<String> tokens = new HashSet<>(userData.getTokens());
-                        tokens.add(token);
-                        ImmutableSet<String> newTokenSet = ImmutableSet.copyOf(tokens);
-                        UserData data = new UserData(secondId, sla, rps, newTokenSet, user);
+//                        long rps = userData.getRps();
+//                        Set<String> tokens = new HashSet<>(userData.getTokens());
+//                        tokens.add(token);
+//                        ImmutableSet<String> newTokenSet = ImmutableSet.copyOf(tokens);
+//                        UserData data = new UserData(secondId, sla, rps, newTokenSet, user);
+                        UserData data = new UserData(secondId, sla, userData.getRps(), userData.getTokens(), user);
                         return ImmutableSet.of(data);
                     } else {
-                        // already have Set<UserData
+                        // already have Set<UserData>
                         //userData can already by in userToUserDataSetMap. We need to check it.
                         Sla sla = userData.getSla();
                         String user = sla.getUser();
@@ -310,7 +311,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     }
 
     /**
-     * Immutable. Sla is also immutable
+     * Immutable.
      */
     static class UserData {
         private final long secondId;
@@ -323,7 +324,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             this.secondId = secondId;
             this.sla = sla;
             this.rps = rps;
-            this.tokens = tokens;
+            this.tokens = ImmutableSet.copyOf(tokens);
             this.userId = userId;
         }
 
