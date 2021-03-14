@@ -325,7 +325,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             return userId;
         }
 
-        //compare all fields. Even Ser<Token>
+        //compare all fields. Even Set<Token>
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
