@@ -21,6 +21,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static com.secretcompany.config.ThrottlingConfiguration.CUSTOM_FORK_JOIN_POOL;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_1_1;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_1_2;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_2_1;
@@ -195,8 +196,8 @@ public class ThrottlingServiceTest {
     @Test
     public void shouldThrottleAuthorizedUserWithoutSlaBecauseSlaStubDoesNotKnowAboutIt() {
         Map<String, ThrottlingServiceImpl.UserData> map = new ConcurrentHashMap<>();
-        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, GUEST_RPS, ImmutableSet.of(TOKEN_1_1), USER_1));
-        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, GUEST_RPS, ImmutableSet.of(TOKEN_2_1), USER_1));
+        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, GUEST_RPS, ImmutableSet.of(TOKEN_1_1)));
+        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, GUEST_RPS, ImmutableSet.of(TOKEN_2_1)));
         Field field = ReflectionUtils.findField(ThrottlingServiceImpl.class, "tokenToUserDataMap");
         ReflectionUtils.makeAccessible(field);
         ReflectionUtils.setField(field, throttlingService, map);
