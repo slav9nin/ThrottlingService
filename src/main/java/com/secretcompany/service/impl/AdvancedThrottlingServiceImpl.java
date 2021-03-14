@@ -1,9 +1,7 @@
 package com.secretcompany.service.impl;
 
-import com.secretcompany.dto.Sla;
 import com.secretcompany.service.AdvancedThrottlingService;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.data.util.Optionals;
 
 import java.util.Objects;
 import java.util.Optional;

@@ -1,39 +1,37 @@
 package com.secretcompany.dto;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.secretcompany.annotation.NotThreadSafe;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
  * Implement and support only valuable(required) fields to fit original task.
  */
-@NotThreadSafe
 public class User {
 
-    private final UUID userId;
-
-    // Omit user specific info for this task. It's unnecessary...
-    // private final String userName;
-    // other user specific fields...
-
+    private final String userId;
     private final List<String> userTokens;
 
     public User() {
-        this.userId = UUID.randomUUID();
+        this.userId = UUID.randomUUID().toString();
         this.userTokens = new ArrayList<>();
     }
 
     public User(List<String> userTokens) {
+        this.userId = UUID.randomUUID().toString();
         this.userTokens = userTokens;
-        this.userId = UUID.randomUUID();
     }
 
     @VisibleForTesting
     User(UUID userId, List<String> userTokens) {
+        this.userId = userId.toString();
+        this.userTokens = userTokens;
+    }
+
+    @VisibleForTesting
+    User(String userId, List<String> userTokens) {
         this.userId = userId;
         this.userTokens = userTokens;
     }
