@@ -1,30 +1,35 @@
 package com.secretcompany.service.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableSet;
 import com.secretcompany.dto.Sla;
+import com.secretcompany.exception.MultipleValuesUserDataException;
 import com.secretcompany.exception.NullableUserDataException;
 import com.secretcompany.service.SlaService;
 import com.secretcompany.service.ThrottlingService;
 import lombok.NonNull;
+import org.apache.commons.collections4.IterableUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.secretcompany.service.ThrottlingConstants.AUTHORIZED_USER_ID;
 import static com.secretcompany.service.ThrottlingConstants.UNAUTHORIZED_USER_ID;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singleton;
+import static java.util.stream.Collectors.toSet;
 
 /**
  * ThrottlingServiceImpl Rules:
@@ -36,7 +41,7 @@ import static java.util.Collections.singleton;
  * 6. Throttling Service should not wait for Sla. Cache result from Sla. Support already issued Slas.
  *
  * We make a request to SlaService IFF:
- * 1. For particular UserId we don't have ongoing request to SlaService
+ * 1. For particular Token we don't have ongoing request to SlaService.
  * 2. On each request to ThrottlingService if it satisfies the previous statement.
  */
 public class ThrottlingServiceImpl implements ThrottlingService {
@@ -55,8 +60,8 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 //    private final Map<String, UserData> tokenToUserDataMap = Collections.synchronizedMap(createLRUCache(LRU_MAX_CACHE_CAPACITY));
     private final Map<String, UserData> tokenToUserDataMap = new ConcurrentHashMap<>();
 
-    private final Map<String, List<String>> userToTokenListMap = new ConcurrentHashMap<>();
-    private final Map<String, List<String>> authorizedUsersWithoutSlaToTokenMap = new ConcurrentHashMap<>();
+    //to support RPS by UserName
+    private final Map<String, Set<UserData>> userToUserDataSetMap = new ConcurrentHashMap<>();
 
     //todo avoid non-thread safe data structures.
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
@@ -80,8 +85,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         Optional<String> userToken = Optional.ofNullable(token)
                 .filter(StringUtils::isNotBlank);
 
-//        final AtomicBoolean result = new AtomicBoolean(false);
-
         if (userToken.isPresent()) {
             //compute onl if we have Sla for token, otherwise return null. Null for authorized users which still does not have Sla
             UserData userData = tokenToUserDataMap.computeIfPresent(token, (t, ud) -> {
@@ -93,9 +96,72 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             });
             //if null -> Authorized user without Sla yet.
             // Backoff -> compete those users for GuestRPS and attempt to SlaService if no one exists for particular token
-            // todo when SlaService returns RealUserName we should remove token from DUMMY_KEY_FOR_AUTHORIZED_USERS!!!
-            if (!Optional.ofNullable(userData).isPresent()) {
-                //always not null
+            // todo when SlaService returns RealUserName we should
+            //  add entry to tokenToUserDataMap and then
+            //  remove token from DUMMY_KEY_FOR_AUTHORIZED_USERS!!! Orders matters!
+
+            //do request to SlaService if no one exists for the same token.
+            requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token));
+            //todo add callback on CompletableFuture which update tokens and Slas for users
+
+            if (Optional.ofNullable(userData).isPresent()) {
+                //retrieve user from Sla and then retrieve all entries by UserId.
+                @NonNull Set<UserData> userTokenData = userToUserDataSetMap.compute(userData.getSla().getUser(), (k, v) -> {
+                    if (v == null || IterableUtils.isEmpty(v)) {
+                        Sla sla = userData.getSla();
+                        String user = sla.getUser();
+                        long secondId = userData.getSecondId();
+                        int rps = userData.getRps();
+                        Set<String> tokens = new HashSet<>(userData.getTokens());
+                        tokens.add(token);
+                        ImmutableSet<String> newTokenSet = ImmutableSet.copyOf(tokens);
+                        UserData data = new UserData(secondId, sla, rps, newTokenSet, user);
+                        return ImmutableSet.of(data);
+                    } else {
+                        // already have Set<UserData
+                        //userData can already by in userToUserDataSetMap. We need to check it.
+                        Sla sla = userData.getSla();
+                        String user = sla.getUser();
+                        long secondId = userData.getSecondId();
+                        int rps = userData.getRps();
+                        Set<String> tokens = new HashSet<>(userData.getTokens());
+                        tokens.add(token);
+                        ImmutableSet<String> newTokenSet = ImmutableSet.copyOf(tokens);
+                        UserData data = new UserData(secondId, sla, rps, newTokenSet, user);
+                        //put if absent. Based on equals/hashCode implementation. Should not put if already haas UserData with the same token.
+                        HashSet<UserData> existingSet = new HashSet<>(v);
+                        existingSet.add(data);
+                        return ImmutableSet.copyOf(existingSet);
+                    }
+                });
+                //iterate through userTokenData and count RPS by UserName!
+                Map<Sla, Set<UserData>> collect = userTokenData.stream()
+                        .collect(Collectors.groupingBy(UserData::getSla, Collectors.mapping(Function.identity(), toSet())));
+                if (collect.size() > 1) {
+                    throw new MultipleValuesUserDataException();
+                }
+
+                Set<UserData> userDataSet = collect.get(userData.getSla());
+
+                //each token of the same user has own RPS
+                final int existingRpsThroughAllTokenRps = userDataSet.stream()
+                        .mapToInt(UserData::getRps)
+                        .sum();
+
+                //Sla RPS
+                int rps = userData.getSla().getRps();
+                //count of existing tokens per user
+                int size = userDataSet.size();
+                //max Sla RPS
+                final int maxRpsByUser = userData.getSla().getRps();
+
+                int total = maxRpsByUser * size;
+
+                return total - existingRpsThroughAllTokenRps < rps;
+
+            } else {
+                // userData == null
+                // computedData always is not null
                 @NonNull UserData computedData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> {
                     long secondId = v.getSecondId();
                     if (secondId == secondFromEpoch) {
@@ -114,36 +180,9 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         return authorizedDefaultSla(secondFromEpoch, rps, collectedTokens);
                     }
                 });
-
-                //TODO submit request to SlaService if no one exists.
-//                slaService.getSlaByToken(token);
+                //all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
                 return checkRemainingRps(computedData) > 0;
             }
-
-
-//            @NonNull UserData userData = tokenToUserDataMap.compute(token, (t, ud) -> {
-//                if (Objects.nonNull(ud)) {
-//                    //todo count rps through all tokens for particular user
-//                    if (ud.getSecondId() == secondFromEpoch) {
-//                        return new UserData(secondFromEpoch, ud.getSla(), ud.getRps() - 1, ud.getTokens(), ud.getSla().getUser());
-//                    } else {
-//                        return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps(), ud.getTokens(), ud.getSla().getUser());
-//                    }
-//                } else {
-//                    //todo createGuestSla OR createAuthorizedSlaWithGuestRps???
-////                    return createGuestSla(secondFromEpoch);
-//                    //  further SlaRequests return Sla with Real userName and replace UUID with userName
-//                    return authorizedDefaultSla(secondFromEpoch, token);
-//                }
-//            });
-//            //todo count rps through all tokens for particular user
-////            userData.getSla().getUser()
-//
-//            //todo do request to SlaService if no one exists for particular token!
-//            // if already have ongoing request -> try to add callback on it with async prefix
-//            CompletableFuture<Sla> ongoingSlaRequest =
-//                    requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token));
-
 
         } else {
             //Token is absent. All unauthorized users compete for GuestRPS.
@@ -162,15 +201,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
             return checkRemainingRps(newUserData) > 0;
         }
-
-        return false;
     }
-
-//    private void enqueueNewSlaRequest(final String token) {
-//        //todo implement
-//        slaService.getSlaByToken(token)
-//                .thenApply()
-//    }
 
     private long checkRemainingRps(@NonNull UserData newUserData) {
         return Optional.ofNullable(newUserData)
@@ -263,6 +294,20 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
         public String getUserId() {
             return userId;
+        }
+
+        //compare all fields. Even Ser<Token>
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            UserData userData = (UserData) o;
+            return secondId == userData.secondId && rps == userData.rps && Objects.equal(sla, userData.sla) && Objects.equal(tokens, userData.tokens) && Objects.equal(userId, userData.userId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(secondId, sla, rps, tokens, userId);
         }
     }
 }
