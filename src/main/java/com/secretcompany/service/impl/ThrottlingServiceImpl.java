@@ -79,10 +79,10 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
     @Override
     public boolean isRequestAllowed(final String token) {
-        //get current second from start of Epoch. It's an ID for current second.
+        // get current second from start of Epoch. It's an ID for current second.
         long secondFromEpoch = getSecondFromEpoch();
 
-        //check current token is blank
+        // check current token is blank
         Optional<String> userToken = Optional.ofNullable(token)
                 .filter(StringUtils::isNotBlank);
 
@@ -96,7 +96,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 }
             });
 
-            //do request to SlaService if no one exists for the same token.
+            // do request to SlaService if no one exists for the same token.
             requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token))
                     .thenAcceptAsync(sla -> {
                         //when SlaService returns RealUserName we should
@@ -135,7 +135,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     .thenRunAsync(() -> requestToSlaPerToken.remove(token), CUSTOM_FORK_JOIN_POOL);
 
             if (Optional.ofNullable(userData).isPresent()) {
-                //retrieve user from Sla and then retrieve all entries by UserId.
+                // retrieve user from Sla and then retrieve all entries by UserId.
                 @NonNull Set<UserData> userTokenData = userToUserDataSetMap.compute(userData.getSla().getUser(), (k, v) -> {
                     if (v == null || IterableUtils.isEmpty(v)) {
                         Sla sla = userData.getSla();
@@ -164,7 +164,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         return ImmutableSet.copyOf(existingSet);
                     }
                 });
-                //iterate through userTokenData and count RPS by UserName!
+                // iterate through userTokenData and count RPS by UserName!
                 Map<Sla, Set<UserData>> collect = userTokenData.stream()
                         .collect(Collectors.groupingBy(UserData::getSla, Collectors.mapping(Function.identity(), toSet())));
                 if (collect.size() > 1) {
@@ -173,7 +173,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
                 Set<UserData> userDataSet = collect.get(userData.getSla());
 
-                //each token of the same user has own RPS
+                // each token of the same user has own RPS
                 final int existingRpsThroughAllTokenRps = userDataSet.stream()
                         .mapToInt(UserData::getRps)
                         .sum();
@@ -210,12 +210,12 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         return authorizedDefaultSla(secondFromEpoch, rps, collectedTokens);
                     }
                 });
-                //all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
+                // all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
                 return checkRemainingRps(computedData) > 0;
             }
 
         } else {
-            //Token is absent. All unauthorized users compete for GuestRPS.
+            // Token is absent. All unauthorized users compete for GuestRPS.
             // UserData always should not be null.
             @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> {
                 long secondId = v.getSecondId();
@@ -244,6 +244,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         return new UserData(secondFromEpoch, guestSla, guestRps, emptySet(), guestSla.getUser());
     }
 
+    //todo remove if necessary.
     private UserData authorizedDefaultSla(long secondFromEpoch, String token) {
         Sla authorizedDefaultSla = createAuthorizedDefaultSla();
         return new UserData(secondFromEpoch, authorizedDefaultSla, guestRps, singleton(token), authorizedDefaultSla.getUser());
@@ -270,9 +271,10 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     /**
      * Authorized users should not compete with non-authorized. Each authorized user w/o Sla from SlaService
      * has each own default GuestRPS.
-     * @return Sla for authorized user with random UUID and GuestRPS to prevent competing with non-authorized users.
+     * @return Sla for authorized user with AUTHORIZED_USER_ID Id and GuestRPS to prevent competing with non-authorized users.
      */
     private Sla createAuthorizedDefaultSla() {
+        //todo remove comment
 //        return new Sla(UUID.randomUUID().toString(), guestRps);
         return new Sla(AUTHORIZED_USER_ID, guestRps);
     }
