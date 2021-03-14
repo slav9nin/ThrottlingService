@@ -8,9 +8,9 @@ import com.google.common.base.Objects;
  */
 public class Sla {
     private final String user;
-    private final int rps;
+    private final long rps;
 
-    public Sla(final String user, final int rps) {
+    public Sla(final String user, final long rps) {
         this.user = user;
         this.rps = rps;
     }
@@ -19,7 +19,7 @@ public class Sla {
         return this.user;
     }
 
-    public int getRps() {
+    public long getRps() {
         return this.rps;
     }
 

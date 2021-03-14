@@ -122,7 +122,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                             } else {
                                 //no entry yet for this token
                                 //create new UserData with secondFromEpoch
-                                return new UserData(secondFromEpoch, sla, sla.getRps(), ImmutableSet.of(token), sla.getUser());
+                                return new UserData(getSecondFromEpoch(), sla, sla.getRps(), ImmutableSet.of(token), sla.getUser());
                             }
                         });
 
@@ -145,7 +145,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         Sla sla = userData.getSla();
                         String user = sla.getUser();
                         long secondId = userData.getSecondId();
-                        int rps = userData.getRps();
+                        long rps = userData.getRps();
                         Set<String> tokens = new HashSet<>(userData.getTokens());
                         tokens.add(token);
                         ImmutableSet<String> newTokenSet = ImmutableSet.copyOf(tokens);
@@ -157,7 +157,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         Sla sla = userData.getSla();
                         String user = sla.getUser();
                         long secondId = userData.getSecondId();
-                        int rps = userData.getRps();
+                        long rps = userData.getRps();
                         Set<String> tokens = new HashSet<>(userData.getTokens());
                         tokens.add(token);
                         ImmutableSet<String> newTokenSet = ImmutableSet.copyOf(tokens);
@@ -178,18 +178,18 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 Set<UserData> userDataSet = collect.values().stream().flatMap(Collection::stream).collect(toSet());
 
                 // each token of the same user has own RPS
-                final int existingRpsThroughAllTokenRps = userDataSet.stream()
-                        .mapToInt(UserData::getRps)
+                final long existingRpsThroughAllTokenRps = userDataSet.stream()
+                        .mapToLong(UserData::getRps)
                         .sum();
 
                 //Sla RPS
-                int rps = userData.getSla().getRps();
+                long rps = userData.getSla().getRps();
                 //count of existing tokens per user
                 int size = userDataSet.size();
                 //max Sla RPS
-                final int maxRpsByUser = userData.getSla().getRps();
+                final long maxRpsByUser = userData.getSla().getRps();
 
-                int total = maxRpsByUser * size;
+                long total = maxRpsByUser * size;
 
                 return total - existingRpsThroughAllTokenRps <= rps;
 
@@ -203,14 +203,14 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         Set<String> tokens = new HashSet<>(v.getTokens());
                         tokens.add(token);
                         Set<String> collectedTokens = ImmutableSet.copyOf(tokens);
-                        int existingRps = v.getRps();
+                        long existingRps = v.getRps();
                         return new UserData(secondFromEpoch, v.getSla(), existingRps - 1, collectedTokens, v.getSla().getUser());
                     } else {
                         // new second
                         Set<String> tokens = new HashSet<>(v.getTokens());
                         tokens.add(token);
                         Set<String> collectedTokens = ImmutableSet.copyOf(tokens);
-                        int rps = v.getSla().getRps();
+                        long rps = v.getSla().getRps();
                         return authorizedDefaultSla(secondFromEpoch, rps, collectedTokens);
                     }
                 });
@@ -226,7 +226,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 long secondId = v.getSecondId();
                 if (secondId == secondFromEpoch) {
                     // within same second
-                    int existingRps = v.getRps();
+                    long existingRps = v.getRps();
                     return new UserData(secondFromEpoch, v.getSla(), existingRps - 1, emptySet(), v.getSla().getUser());
                 } else {
                     // new second
@@ -255,7 +255,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         return new UserData(secondFromEpoch, authorizedDefaultSla, guestRps, singleton(token), authorizedDefaultSla.getUser());
     }
 
-    private UserData authorizedDefaultSla(long secondFromEpoch, int rps, Set<String> tokens) {
+    private UserData authorizedDefaultSla(long secondFromEpoch, long rps, Set<String> tokens) {
         Sla authorizedDefaultSla = createAuthorizedDefaultSla();
         return new UserData(secondFromEpoch, authorizedDefaultSla, rps, tokens, authorizedDefaultSla.getUser());
     }
@@ -315,11 +315,11 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     static class UserData {
         private final long secondId;
         private final Sla sla;
-        private final int rps;
+        private final long rps;
         private final Set<String> tokens;
         private final String userId;
 
-        public UserData(long secondId, Sla sla, int rps, Set<String> tokens, String userId) {
+        public UserData(long secondId, Sla sla, long rps, Set<String> tokens, String userId) {
             this.secondId = secondId;
             this.sla = sla;
             this.rps = rps;
@@ -335,7 +335,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             return sla;
         }
 
-        public int getRps() {
+        public long getRps() {
             return rps;
         }
 
