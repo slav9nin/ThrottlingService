@@ -1,7 +1,6 @@
 package com.secretcompany.service.impl;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableSet;
 import com.secretcompany.dto.Sla;
 import com.secretcompany.exception.MultipleValuesUserDataException;
@@ -17,6 +16,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.secretcompany.config.ThrottlingConfiguration.CUSTOM_FORK_JOIN_POOL;
 import static com.secretcompany.service.ThrottlingConstants.AUTHORIZED_USER_ID;
 import static com.secretcompany.service.ThrottlingConstants.UNAUTHORIZED_USER_ID;
 import static java.util.Collections.emptySet;
@@ -94,15 +95,44 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps(), ud.getTokens(), ud.getSla().getUser());
                 }
             });
-            //if null -> Authorized user without Sla yet.
-            // Backoff -> compete those users for GuestRPS and attempt to SlaService if no one exists for particular token
-            // todo when SlaService returns RealUserName we should
-            //  add entry to tokenToUserDataMap and then
-            //  remove token from DUMMY_KEY_FOR_AUTHORIZED_USERS!!! Orders matters!
 
             //do request to SlaService if no one exists for the same token.
-            requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token));
-            //todo add callback on CompletableFuture which update tokens and Slas for users
+            requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token))
+                    .thenAcceptAsync(sla -> {
+                        //when SlaService returns RealUserName we should
+                        //  1. add entry to tokenToUserDataMap and then
+                        //  2. remove token from DUMMY_KEY_FOR_AUTHORIZED_USERS!!!
+                        //  Order matters!
+                        //  3. Cleanup requestToSlaPerToken to avoid memory leak.
+
+                        // here we update tokenToUserDataMap twice without any locking, but it's ok, due to order and key which we are using!
+
+                        //1. add to tokenToUserDataMap Sla
+                        tokenToUserDataMap.compute(token, (t, ud) -> {
+                            if (Objects.nonNull(ud)) {
+                                // existing entry for this token.
+                                // should update token and support existing values of ud (currently computed UserData)
+                                // also, we support remaining RPS even if New SLA has new one. To simplify solution.
+                                return new UserData(ud.getSecondId(), sla, ud.getRps(), ud.getTokens(), sla.getUser());
+
+                            } else {
+                                //no entry yet for this token
+                                //create new UserData with secondFromEpoch
+                                return new UserData(secondFromEpoch, sla, sla.getRps(), ImmutableSet.of(token), sla.getUser());
+                            }
+                        });
+
+                        //2. remove from tokenToUserDataMap by DUMMY_KEY_FOR_AUTHORIZED_USERS key this token from set of tokens
+                        tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> {
+                            Set<String> tokens = v.getTokens().stream()
+                                    .filter(t -> !Objects.equals(token, t))
+                                    .collect(toSet());
+                            return new UserData(v.getSecondId(), v.getSla(), v.getRps(), ImmutableSet.copyOf(tokens), v.getUserId());
+                        });
+
+                    }, CUSTOM_FORK_JOIN_POOL)
+                    // 3. cleanup request pool after completion to avoid memory leak.
+                    .thenRunAsync(() -> requestToSlaPerToken.remove(token), CUSTOM_FORK_JOIN_POOL);
 
             if (Optional.ofNullable(userData).isPresent()) {
                 //retrieve user from Sla and then retrieve all entries by UserId.
@@ -207,7 +237,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         return Optional.ofNullable(newUserData)
                 .map(UserData::getRps)
                 .orElseThrow(NullableUserDataException::new);
-
     }
 
     private UserData createGuestSla(long secondFromEpoch) {
@@ -222,7 +251,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
     private UserData authorizedDefaultSla(long secondFromEpoch, int rps, Set<String> tokens) {
         Sla authorizedDefaultSla = createAuthorizedDefaultSla();
-        return new UserData(secondFromEpoch, authorizedDefaultSla, guestRps, tokens, authorizedDefaultSla.getUser());
+        return new UserData(secondFromEpoch, authorizedDefaultSla, rps, tokens, authorizedDefaultSla.getUser());
     }
 
     /**
@@ -302,12 +331,13 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             UserData userData = (UserData) o;
-            return secondId == userData.secondId && rps == userData.rps && Objects.equal(sla, userData.sla) && Objects.equal(tokens, userData.tokens) && Objects.equal(userId, userData.userId);
+            return secondId == userData.secondId && rps == userData.rps && Objects.equals(sla, userData.sla)
+                    && Objects.equals(tokens, userData.tokens) && Objects.equals(userId, userData.userId);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hashCode(secondId, sla, rps, tokens, userId);
+            return Objects.hash(secondId, sla, rps, tokens, userId);
         }
     }
 }

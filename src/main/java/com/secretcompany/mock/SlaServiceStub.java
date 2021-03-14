@@ -13,6 +13,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
 
+/**
+ * Stub. For testing purpose.
+ */
 public class SlaServiceStub implements SlaService {
 
     private static final String TOKEN_1_1 = UUID.randomUUID().toString();
