@@ -1,7 +1,8 @@
 package com.secretcompany.dto;
 
 import com.google.common.base.MoreObjects;
-import com.google.common.base.Objects;
+
+import java.util.Objects;
 
 /**
  * Immutable
@@ -11,6 +12,7 @@ public class Sla {
     private final long rps;
 
     public Sla(final String user, final long rps) {
+        Objects.requireNonNull(user, "USer should not be null");
         this.user = user;
         this.rps = rps;
     }
@@ -28,12 +30,12 @@ public class Sla {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Sla sla = (Sla) o;
-        return rps == sla.rps && Objects.equal(user, sla.user);
+        return rps == sla.rps && Objects.equals(user, sla.user);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(user, rps);
+        return Objects.hash(user, rps);
     }
 
     @Override
