@@ -138,7 +138,7 @@ public class ThrottlingServiceTest {
             Clock fixed = Clock.fixed(now.plusSeconds(index), ZoneId.systemDefault());
             System.out.println("Second :" + Instant.now(fixed).getEpochSecond());
             throttlingService.setSystemClock(fixed);
-        } while (index <= total);
+        } while (index < total);
     }
 
     @Test
@@ -304,7 +304,7 @@ public class ThrottlingServiceTest {
             Clock fixed = Clock.fixed(now.plusSeconds(index), ZoneId.systemDefault());
             System.out.println("Second :" + Instant.now(fixed).getEpochSecond());
             throttlingService.setSystemClock(fixed);
-        } while (index <= total);
+        } while (index < total);
     }
 
     private String getToken(List<String> slaTokens, int index) {
