@@ -50,10 +50,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     private final SlaService slaService;
     private Clock systemClock;
 
-    // TreeMap is red-black tree (search tree). We cannot use it due to unknown amount of users.
-    // So it can lead to re-balancing of tree too many times. That's why using hash map.
-    // Also, we want to use it as a CACHE. LRU cache (LinkedHashMap) is appropriate here.
-
     // TODO LinkedHashMap can be used as LRU Cache. But we don't have a concurrent version. Consider using org.springframework.cache.concurrent.ConcurrentMapCache
     private final Map<String, UserData> tokenToUserDataMap = new ConcurrentHashMap<>();
 //    private final Map<String, UserData> tokenToUserDataMap = createLRUCache(LRU_MAX_CACHE_CAPACITY);
