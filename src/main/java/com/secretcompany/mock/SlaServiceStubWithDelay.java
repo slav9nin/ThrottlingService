@@ -41,7 +41,7 @@ public class SlaServiceStubWithDelay implements SlaService {
             this.slaDelay = delay;
         }
         this.randomizeDelay = randomizeDelay;
-        ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder().setNameFormat("SlaWorkerThread-%s");
+        ThreadFactoryBuilder threadFactoryBuilder = new ThreadFactoryBuilder().setDaemon(true).setNameFormat("SlaWorkerThread-%s");
         threadPool = Executors
                 .newFixedThreadPool(Runtime.getRuntime().availableProcessors(), threadFactoryBuilder.build());
         predefinedMapping = initializeStub();
