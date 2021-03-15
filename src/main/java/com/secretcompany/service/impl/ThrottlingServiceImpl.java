@@ -13,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -98,35 +99,54 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
             if (Optional.ofNullable(userData).isPresent()) {
                 // retrieve user from Sla and then retrieve all entries by UserId.
-                slaUserLock.lock(); // support fair ordering
-                try {
-                    @NonNull UserData slaData = tokenToUserDataMap.computeIfPresent(token, (t, ud) -> {
-                        if (ud.getSecondId() == secondFromEpoch) {
-                            return new UserData(ud.getSecondId(), ud.getSla(), ud.getRps() - 1, ud.getToken());
-                        } else {
-                            return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps() - 1, ud.getToken());
+                @NonNull UserTokenInfo userTokenInfo = userToUserDataMap.compute(userData.getSla().getUser(), (k, v) -> {
+                    if (Objects.isNull(v)) {
+                        return new UserTokenInfo(userData.getSla().getUser(), ImmutableSet.of(token));
+                    } else {
+                        if (v.getTokens().stream().anyMatch(t -> Objects.equals(t, token))) {
+                            //the same token
+                            return new UserTokenInfo(userData.getSla().getUser(), v.getTokens());
                         }
-                    });
-                    @NonNull UserTokenInfo userTokenInfo = userToUserDataMap.compute(slaData.getSla().getUser(), (k, v) -> {
-                        if (Objects.isNull(v)) {
-                            return new UserTokenInfo(slaData.getSla().getUser(), ImmutableSet.of(token), slaData.getRps());
-                        } else {
-                            if (v.getTokens().stream().anyMatch(t -> Objects.equals(t, token))) {
-                                //the same token
-                                return new UserTokenInfo(slaData.getSla().getUser(), v.getTokens(), slaData.getRps());
+                        return new UserTokenInfo(userData.getSla().getUser(), ImmutableSet.<String>builder().addAll(v.getTokens()).add(token).build());
+                    }
+                });
+                final Set<UserData> allTokensByUser = new HashSet<>();
+                for (String usersToken: userTokenInfo.getTokens()) {
+                    if (Objects.equals(usersToken, token)) {
+                        //compute rps only for current token.
+                        @NonNull UserData slaData = tokenToUserDataMap.computeIfPresent(usersToken, (t, ud) -> {
+                            if (ud.getSecondId() == secondFromEpoch) {
+                                return new UserData(ud.getSecondId(), ud.getSla(), ud.getRps() - 1, ud.getToken());
+                            } else {
+                                return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps() - 1, ud.getToken());
                             }
-                            long totalRps = v.getRps() + slaData.getRps();
-                            return new UserTokenInfo(slaData.getSla().getUser(), ImmutableSet.<String>builder().addAll(v.getTokens()).add(token).build(), totalRps);
-                        }
-                    });
-                    final long existingRpsThroughAllTokenRps = userTokenInfo.getRps();
-                    int size = userTokenInfo.getTokens().size();
-                    final long maxRpsByUser = slaData.getSla().getRps();
-                    long total = maxRpsByUser * size;
-                    return total - existingRpsThroughAllTokenRps <= maxRpsByUser;
-                } finally {
-                    slaUserLock.unlock();
+                        });
+                        allTokensByUser.add(slaData);
+                    } else {
+                        @NonNull UserData slaData = tokenToUserDataMap.get(usersToken);
+                        allTokensByUser.add(slaData);
+                    }
                 }
+                Map<Sla, Set<UserData>> collect = allTokensByUser.stream()
+                        .filter(ud -> Objects.equals(ud.getSecondId(), secondFromEpoch))
+                        .collect(Collectors.groupingBy(UserData::getSla, Collectors.mapping(Function.identity(), toSet())));
+                if (collect.size() > 1) {
+                    throw new MultipleValuesUserDataException();
+                }
+
+                // each token of the same user has own RPS
+                final long existingRpsThroughAllTokenRps = allTokensByUser.stream()
+                        .mapToLong(UserData::getRps)
+                        .sum();
+
+                //count of existing tokens per user
+                int size = allTokensByUser.size();
+                //max Sla RPS
+                final long maxRpsByUser = userData.getSla().getRps();
+
+                long total = maxRpsByUser * size;
+
+                return total - existingRpsThroughAllTokenRps <= maxRpsByUser;
             } else {
                 // userData == null
                 // computedData always is not null
@@ -320,14 +340,12 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     static class UserTokenInfo {
         private final String userName;
         private final Set<String> tokens;
-        private final long rps;
 
-        UserTokenInfo(String userName, Set<String> tokens, long rps) {
+        UserTokenInfo(String userName, Set<String> tokens) {
             Objects.requireNonNull(userName, "UserName is required");
             Objects.requireNonNull(tokens, "tokenSet is required");
             this.userName = userName;
             this.tokens = tokens;
-            this.rps = rps;
         }
 
         public String getUserName() {
@@ -338,21 +356,18 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             return tokens;
         }
 
-        public long getRps() {
-            return rps;
-        }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             UserTokenInfo that = (UserTokenInfo) o;
-            return rps == that.rps && Objects.equals(userName, that.userName) && Objects.equals(tokens, that.tokens);
+            return Objects.equals(userName, that.userName) && Objects.equals(tokens, that.tokens);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(userName, tokens, rps);
+            return Objects.hash(userName, tokens);
         }
     }
 }

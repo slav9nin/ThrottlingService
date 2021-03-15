@@ -135,7 +135,6 @@ public class ThrottlingServiceTest {
         assertThat(throttlingService.getTokenToUserDataMap()).hasSize(2 + slaTokens.size());
 
 
-        //todo
         //increase second sequence in fixedClock
         fixedClock = Clock.fixed(Instant.now(), ZoneId.systemDefault());
         throttlingService.setSystemClock(fixedClock);
