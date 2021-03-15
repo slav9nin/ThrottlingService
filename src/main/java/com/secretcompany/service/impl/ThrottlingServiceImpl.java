@@ -60,7 +60,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
     //to support RPS by UserName
     private final Map<String, UserTokenInfo> userToUserDataMap = new ConcurrentHashMap<>();
-    private final Map<String, Sla> tokenToSlaMap = new ConcurrentHashMap<>();
 
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
 
@@ -177,7 +176,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     }
 
     private void checkSlaService(String token) {
-        requestToSlaPerToken.computeIfAbsent(token, (t) -> CompletableFuture.completedFuture(0).thenComposeAsync((v) -> slaService.getSlaByToken(token), CUSTOM_FORK_JOIN_POOL))
+        requestToSlaPerToken.computeIfAbsent(token, proceedSlaService(token))
                 .thenAcceptAsync(sla -> {
                     if (Objects.isNull(sla)) {
                         //Sla Service does not have any mappings for this token
@@ -210,21 +209,17 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 .thenRunAsync(() -> requestToSlaPerToken.remove(token), CUSTOM_FORK_JOIN_POOL);
     }
 
+    private Function<String, CompletableFuture<Sla>> proceedSlaService(String token) {
+        //always run on separate thread pool. We aru using custom FORK_JOIN_POOL to avoid problem with default one in Java Stream API
+        return (t) ->
+                CompletableFuture.completedFuture(0)
+                        .thenComposeAsync((v) -> slaService.getSlaByToken(token), CUSTOM_FORK_JOIN_POOL);
+    }
+
     private long checkRemainingRps(@NonNull UserData newUserData) {
         return Optional.ofNullable(newUserData)
                 .map(UserData::getRps)
                 .orElseThrow(NullableUserDataException::new);
-    }
-
-    private UserData createGuestSla(long secondFromEpoch) {
-        Sla guestSla = createGuestSla();
-        return new UserData(secondFromEpoch, guestSla, guestRps, DUMMY_KEY);
-    }
-
-    //todo remove if necessary.
-    private UserData authorizedDefaultSla(long secondFromEpoch, String token) {
-        Sla authorizedDefaultSla = createAuthorizedDefaultSla();
-        return new UserData(secondFromEpoch, authorizedDefaultSla, guestRps, token);
     }
 
     private UserData authorizedDefaultSla(long secondFromEpoch, long rps, String token) {
@@ -251,8 +246,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
      * @return Sla for authorized user with AUTHORIZED_USER_ID Id and GuestRPS to prevent competing with non-authorized users.
      */
     private Sla createAuthorizedDefaultSla() {
-        //todo remove comment
-//        return new Sla(UUID.randomUUID().toString(), guestRps);
         return new Sla(AUTHORIZED_USER_ID, guestRps);
     }
 
