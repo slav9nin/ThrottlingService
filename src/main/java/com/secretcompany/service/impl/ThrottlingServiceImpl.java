@@ -8,7 +8,6 @@ import com.secretcompany.exception.NullableUserDataException;
 import com.secretcompany.service.SlaService;
 import com.secretcompany.service.ThrottlingService;
 import lombok.NonNull;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.time.Clock;
@@ -22,8 +21,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -66,9 +63,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     private final Map<String, Sla> tokenToSlaMap = new ConcurrentHashMap<>();
 
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
-
-    //These locks not for guarding ConcurrentMap but for supporting request ordering
-    private final Lock slaUserLock = new ReentrantLock(false);
 
     public ThrottlingServiceImpl(int guestRps, SlaService slaService) {
         this.guestRps = guestRps;
@@ -174,7 +168,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     return new UserData(secondId, v.getSla(), v.getRps() - 1, v.getToken());
                 } else {
                     // new second
-//                        return createGuestSla(secondFromEpoch);
                     return new UserData(secondFromEpoch, v.getSla(), v.getSla().getRps() - 1, v.getToken());
                 }
             });
@@ -207,7 +200,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         } else {
                             //no entry yet for this token
                             //create new UserData with secondFromEpoch
-                            return new UserData(getSecondFromEpoch(), sla, sla.getRps(), token);// or get new second getSecondFromEpoch() ???
+                            return new UserData(getSecondFromEpoch(), sla, sla.getRps(), token);
                         }
                     });
 

@@ -8,6 +8,9 @@ import java.util.Optional;
 
 import static com.secretcompany.service.ThrottlingConstants.USER_ID_IS_REQUIRED;
 
+/**
+ * @See ThrottlingServiceImpl
+ */
 public class AdvancedThrottlingServiceImpl implements AdvancedThrottlingService {
     @Override
     public synchronized boolean isRequestAllowed(final String token, final String userId) {
