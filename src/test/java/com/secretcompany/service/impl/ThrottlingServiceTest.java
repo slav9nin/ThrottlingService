@@ -185,7 +185,7 @@ public class ThrottlingServiceTest {
     }
 
     @Test
-    public void shouldThrottleAuthorizedUserWithoutSlaBecauseSlaStubDoesNotKnowAboutIt() {
+    public void shouldThrottleAuthorizedMizedUsersWithoutAndWithSla() {
         //simulate different authorized users submit a token OR one user submit different tokens.
         //EmptySlaService to prevent updating Sla in ThrottlingService.
         final List<String> slaTokens = Lists.newArrayList(TOKEN_1_1, TOKEN_1_2, TOKEN_2_1, TOKEN_2_2);
