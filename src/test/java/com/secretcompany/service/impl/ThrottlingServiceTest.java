@@ -1,6 +1,5 @@
 package com.secretcompany.service.impl;
 
-import com.google.common.collect.ImmutableSet;
 import com.secretcompany.mock.EmptySlaService;
 import com.secretcompany.mock.SlaServiceStubWithDelay;
 import org.assertj.core.util.Lists;
@@ -187,38 +186,45 @@ public class ThrottlingServiceTest {
 
     @Test
     public void shouldThrottleAuthorizedUserWithoutSlaBecauseSlaStubDoesNotKnowAboutIt() {
+        //simulate different authorized users submit a token OR one user submit different tokens.
+        //EmptySlaService to prevent updating Sla in ThrottlingService.
+        final List<String> slaTokens = Lists.newArrayList(TOKEN_1_1, TOKEN_1_2, TOKEN_2_1, TOKEN_2_2);
+
         Map<String, ThrottlingServiceImpl.UserData> map = new ConcurrentHashMap<>();
-        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, GUEST_RPS, TOKEN_1_1));
-        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, GUEST_RPS, TOKEN_2_1));
+        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS - 2, TOKEN_1_1));
+        map.put(TOKEN_1_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS - 2, TOKEN_1_2));
+        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS - 2, TOKEN_2_1));
+        map.put(TOKEN_2_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS - 2, TOKEN_2_2));
+
+        throttlingService = new ThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
+        throttlingService.getTokenToUserDataMap().forEach(map::put);
+        throttlingService.setSystemClock(fixedClock);
         Field field = ReflectionUtils.findField(ThrottlingServiceImpl.class, "tokenToUserDataMap");
         ReflectionUtils.makeAccessible(field);
         ReflectionUtils.setField(field, throttlingService, map);
-        //simulate different authorized users submit a token OR one user submit different tokens.
-        //EmptySlaService to prevent updating Sla in ThrottlingService.
-        throttlingService = new ThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
-        throttlingService.setSystemClock(fixedClock);
 
-        IntStream.rangeClosed(1, REAL_RPS)
+        ConcurrentMap<Boolean, Long> withoutSla = IntStream.rangeClosed(1, REAL_RPS)
                 .parallel()
-//                .peek(i -> System.out.println("Current index: " + i))
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(UUID.randomUUID().toString()))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
-//        List<String> userFirstTokens = Lists.newArrayList("userFirst.1", "userFirst.2");
-//        List<String> userFSecondTokens = Lists.newArrayList("userSecond.1", "userSecond.2", "userSecond.3");
-//
-//        List<Boolean> userFirstResult = IntStream.rangeClosed(1, 25)
-//                .mapToObj(i -> userFirstTokens.get(userFirstTokens.size() % i))
-//                .map(userToken -> throttlingService.isRequestAllowed(userToken))
-//                .collect(Collectors.toList());
-//
-//        List<Boolean> userSecondResult = IntStream.rangeClosed(1, 25)
-//                .mapToObj(i -> userFSecondTokens.get(userFSecondTokens.size() % i))
-//                .map(userToken -> throttlingService.isRequestAllowed(userToken))
-//                .collect(Collectors.toList());
-//
-//        System.out.println(userFirstResult);
-//        System.out.println(userSecondResult);
+        ConcurrentMap<Boolean, Long> withSla = IntStream.rangeClosed(1, REAL_RPS)
+                .parallel()
+                .mapToObj(userToken -> throttlingService.isRequestAllowed(getToken(slaTokens, userToken)))
+                .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
+
+        assertThat(withoutSla).isNotEmpty();
+        assertThat(withoutSla).hasSize(2);
+        assertThat(withoutSla.get(true)).isEqualTo(GUEST_RPS);
+        assertThat(withoutSla.get(false)).isEqualTo(REAL_RPS - GUEST_RPS);
+
+        assertThat(withSla).isNotEmpty();
+        assertThat(withSla).hasSize(2);
+        // -4, because for each token -2 when we populate tokens. each user has 2 tokens.
+        int totalsRps = USER_1_MAX_RPS - 4 + USER_2_MAX_RPS - 4;
+        assertThat(withSla.get(true)).isEqualTo(totalsRps);
+        assertThat(withSla.get(false)).isEqualTo(REAL_RPS - totalsRps);
+
     }
 
     private String getToken(List<String> slaTokens, int index) {
