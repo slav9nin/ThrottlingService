@@ -42,7 +42,8 @@ public class ThrottlingServiceTest {
     private ThrottlingServiceImpl throttlingService ;
 
     //Test should return always the same second from epoch.
-    private Clock fixedClock = Clock.fixed(Instant.now(), ZoneId.systemDefault());
+    private final Instant now = Instant.now();
+    private Clock fixedClock = Clock.fixed(now, ZoneId.systemDefault());
 
     @Before
     public void init() {
@@ -97,12 +98,47 @@ public class ThrottlingServiceTest {
         assertThat(collect.get(true)).isEqualTo(GUEST_RPS);
         assertThat(collect.get(false)).isEqualTo(REAL_RPS - GUEST_RPS);
 
-        assertThat(throttlingService.getRequestToSlaPerToken()).isEmpty();
         assertThat(throttlingService.getUserToUserDataSetMap()).isEmpty();
 
         //By default ThrottlingServiceImpl populate dummy values for authorized and unauthorized users.
         // That's why size == 2.
         assertThat(throttlingService.getTokenToUserDataMap()).hasSize(2);
+    }
+
+    @Test
+    public void shouldThrottleAuthorizedUserWith20000Iteration() {
+        final int total = 20000;
+        int index = 0;
+        throttlingService = new ThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
+        throttlingService.setSystemClock(fixedClock);
+        System.out.println("Second :" + Instant.now(fixedClock).getEpochSecond());
+        do {
+            index++;
+            //simulate different authorized users submit a token OR one user submit different tokens.
+            //EmptySlaService to prevent updating Sla in ThrottlingService.
+
+            ConcurrentMap<Boolean, Long> collect = IntStream.rangeClosed(1, REAL_RPS)
+                    .parallel()
+                    .mapToObj(userToken -> throttlingService.isRequestAllowed(UUID.randomUUID().toString()))
+                    .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
+
+            assertThat(collect).isNotEmpty();
+            assertThat(collect).hasSize(2);
+            assertThat(collect.get(true)).isEqualTo(GUEST_RPS);
+            assertThat(collect.get(false)).isEqualTo(REAL_RPS - GUEST_RPS);
+
+            assertThat(throttlingService.getUserToUserDataSetMap()).isEmpty();
+
+            //By default ThrottlingServiceImpl populate dummy values for authorized and unauthorized users.
+            // That's why size == 2.
+            assertThat(throttlingService.getTokenToUserDataMap()).hasSize(2);
+
+            //increment second Id manually
+            System.out.println("Index: " + index);
+            Clock fixed = Clock.fixed(now.plusSeconds(index), ZoneId.systemDefault());
+            System.out.println("Second :" + Instant.now(fixed).getEpochSecond());
+            throttlingService.setSystemClock(fixed);
+        } while (index <= total);
     }
 
     @Test
