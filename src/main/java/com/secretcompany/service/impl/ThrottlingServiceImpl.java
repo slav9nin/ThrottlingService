@@ -139,16 +139,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             } else {
                 // userData == null
                 // computedData always is not null
-                @NonNull UserData computedData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> {
-                    long secondId = v.getSecondId();
-                    if (secondId == secondFromEpoch) {
-                        // within same second
-                        return new UserData(secondId, v.getSla(), v.getRps() - 1, v.getToken());
-                    } else {
-                        // new second
-                        return authorizedDefaultSla(secondFromEpoch, v.getSla().getRps() - 1, v.getToken());
-                    }
-                });
+                @NonNull UserData computedData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> computeUserData(secondFromEpoch, v));
                 // all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
                 return checkRemainingRps(computedData) >= 0;
             }
@@ -156,18 +147,20 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         } else {
             // Token is absent. All unauthorized users compete for GuestRPS.
             // UserData always should not be null.
-            @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> {
-                long secondId = v.getSecondId();
-                if (secondId == secondFromEpoch) {
-                    // within same second
-                    return new UserData(secondId, v.getSla(), v.getRps() - 1, v.getToken());
-                } else {
-                    // new second
-                    return new UserData(secondFromEpoch, v.getSla(), v.getSla().getRps() - 1, v.getToken());
-                }
-            });
+            @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> computeUserData(secondFromEpoch, v));
 
             return checkRemainingRps(newUserData) >= 0;
+        }
+    }
+
+    private UserData computeUserData(long secondFromEpoch, UserData v) {
+        long secondId = v.getSecondId();
+        if (secondId == secondFromEpoch) {
+            // within same second
+            return new UserData(secondId, v.getSla(), v.getRps() - 1, v.getToken());
+        } else {
+            // new second
+            return new UserData(secondFromEpoch, v.getSla(), v.getSla().getRps() - 1, v.getToken());
         }
     }
 
@@ -181,8 +174,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     //when SlaService returns RealUserName we should
                     //  1. add entry to tokenToUserDataMap and then
                     //  2. Cleanup requestToSlaPerToken to avoid memory leak.
-
-                    // here we update tokenToUserDataMap twice without any locking, but it's ok, due to order and key which we are using!
 
                     //1. add to tokenToUserDataMap Sla
                     tokenToUserDataMap.compute(token, (t, ud) -> {
@@ -198,7 +189,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                             return new UserData(getSecondFromEpoch(), sla, sla.getRps(), token);
                         }
                     });
-
 
                 }, CUSTOM_FORK_JOIN_POOL)
                 // 2. cleanup request pool after completion to avoid memory leak.
@@ -218,11 +208,6 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 .orElseThrow(NullableUserDataException::new);
     }
 
-    private UserData authorizedDefaultSla(long secondFromEpoch, long rps, String token) {
-        Sla authorizedDefaultSla = createAuthorizedDefaultSla();
-        return new UserData(secondFromEpoch, authorizedDefaultSla, rps, token);
-    }
-
     /**
      * @return number of second from epoch.
      * See Instant.getEpochSecond java-doc.
@@ -237,8 +222,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     }
 
     /**
-     * Authorized users should not compete with non-authorized. Each authorized user w/o Sla from SlaService
-     * has each own default GuestRPS.
+     * Authorized users should not compete with non-authorized.
      * @return Sla for authorized user with AUTHORIZED_USER_ID Id and GuestRPS to prevent competing with non-authorized users.
      */
     private Sla createAuthorizedDefaultSla() {

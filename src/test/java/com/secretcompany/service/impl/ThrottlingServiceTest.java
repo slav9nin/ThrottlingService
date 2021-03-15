@@ -183,7 +183,7 @@ public class ThrottlingServiceTest {
         assertThat(collect).isNotEmpty();
         assertThat(collect).hasSize(2);
         int totalsRps = USER_1_MAX_RPS + USER_2_MAX_RPS;
-        assertThat(collect.get(true)).isEqualTo(totalsRps);
+        assertThat(collect.get(true)).isLessThanOrEqualTo(totalsRps);
         assertThat(collect.get(false)).isEqualTo(REAL_RPS - totalsRps); // 25 - 24 == 1
     }
 
@@ -221,7 +221,7 @@ public class ThrottlingServiceTest {
     }
 
     @Test
-    public void shouldThrottleAuthorizedMizedUsersWithoutAndWithSla() {
+    public void shouldThrottleAuthorizedMixedUsersWithoutAndWithSla() {
         //simulate different authorized users submit a token OR one user submit different tokens.
         //EmptySlaService to prevent updating Sla in ThrottlingService.
         final List<String> slaTokens = Lists.newArrayList(TOKEN_1_1, TOKEN_1_2, TOKEN_2_1, TOKEN_2_2);
@@ -258,9 +258,53 @@ public class ThrottlingServiceTest {
         assertThat(withSla).hasSize(2);
         // -4, because for each token -2 when we populate tokens. each user has 2 tokens.
         int totalsRps = USER_1_MAX_RPS - 4 + USER_2_MAX_RPS - 4;
-        assertThat(withSla.get(true)).isEqualTo(totalsRps);
+        assertThat(withSla.get(true)).isLessThanOrEqualTo(totalsRps);
         assertThat(withSla.get(false)).isEqualTo(REAL_RPS - totalsRps);
+    }
 
+    @Test
+    public void shouldThrottleAuthorizedUsersWithSlaWith20000Iteration() {
+        //simulate different authorized users submit a token OR one user submit different tokens.
+        //EmptySlaService to prevent updating Sla in ThrottlingService.
+        final List<String> slaTokens = Lists.newArrayList(TOKEN_1_1, TOKEN_1_2, TOKEN_2_1, TOKEN_2_2);
+        final int total = 20000;
+        int index = 0;
+        System.out.println("Second :" + Instant.now(fixedClock).getEpochSecond());
+
+        Map<String, ThrottlingServiceImpl.UserData> map = new ConcurrentHashMap<>();
+        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS, TOKEN_1_1));
+        map.put(TOKEN_1_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS, TOKEN_1_2));
+        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS, TOKEN_2_1));
+        map.put(TOKEN_2_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS, TOKEN_2_2));
+
+        throttlingService = new ThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
+        throttlingService.getTokenToUserDataMap().forEach(map::put);
+        throttlingService.setSystemClock(fixedClock);
+        Field field = ReflectionUtils.findField(ThrottlingServiceImpl.class, "tokenToUserDataMap");
+        ReflectionUtils.makeAccessible(field);
+        ReflectionUtils.setField(field, throttlingService, map);
+
+        do {
+            index++;
+
+            ConcurrentMap<Boolean, Long> withSla = IntStream.rangeClosed(1, REAL_RPS)
+                    .parallel()
+                    .mapToObj(userToken -> throttlingService.isRequestAllowed(getToken(slaTokens, userToken)))
+                    .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
+
+            assertThat(withSla).isNotEmpty();
+            assertThat(withSla).hasSize(2);
+            // -4, because for each token -2 when we populate tokens. each user has 2 tokens.
+            long totalsRps = USER_1_MAX_RPS + USER_2_MAX_RPS;
+            assertThat(withSla.get(true)).isLessThanOrEqualTo(totalsRps);
+            assertThat(withSla.get(false)).isEqualTo(REAL_RPS - withSla.get(true));
+
+            //increment second Id manually
+            System.out.println("Index: " + index);
+            Clock fixed = Clock.fixed(now.plusSeconds(index), ZoneId.systemDefault());
+            System.out.println("Second :" + Instant.now(fixed).getEpochSecond());
+            throttlingService.setSystemClock(fixed);
+        } while (index <= total);
     }
 
     private String getToken(List<String> slaTokens, int index) {
