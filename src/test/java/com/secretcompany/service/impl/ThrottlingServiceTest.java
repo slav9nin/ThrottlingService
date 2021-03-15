@@ -21,12 +21,10 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static com.secretcompany.config.ThrottlingConfiguration.CUSTOM_FORK_JOIN_POOL;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_1_1;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_1_2;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_2_1;
 import static com.secretcompany.mock.SlaServiceStubConstants.TOKEN_2_2;
-import static com.secretcompany.mock.SlaServiceStubConstants.USER_1;
 import static com.secretcompany.mock.SlaServiceStubConstants.USER_1_MAX_RPS;
 import static com.secretcompany.mock.SlaServiceStubConstants.USER_1_SLA;
 import static com.secretcompany.mock.SlaServiceStubConstants.USER_2_MAX_RPS;
@@ -67,7 +65,6 @@ public class ThrottlingServiceTest {
     public void shouldThrottleUnAuthorizedUser() {
         ConcurrentMap<Boolean, Long> collect = IntStream.rangeClosed(1, REAL_RPS)
                 .parallel()
-//                .peek(i -> System.out.println("Current index: " + i))
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(null))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
@@ -93,7 +90,6 @@ public class ThrottlingServiceTest {
 
         ConcurrentMap<Boolean, Long> collect = IntStream.rangeClosed(1, REAL_RPS)
                 .parallel()
-//                .peek(i -> System.out.println("Current index: " + i))
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(UUID.randomUUID().toString()))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
@@ -116,7 +112,6 @@ public class ThrottlingServiceTest {
 
         ConcurrentMap<Boolean, Long> collect = IntStream.rangeClosed(1, REAL_RPS)
                 .parallel()
-//                .peek(i -> System.out.println("Current index: " + i))
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(getToken(slaTokens, userToken)))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
@@ -148,7 +143,6 @@ public class ThrottlingServiceTest {
         //SlaService respond with Slas
         collect = IntStream.rangeClosed(1, REAL_RPS)
                 .parallel()
-//                .peek(i -> System.out.println("Current index: " + i))
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(getToken(slaTokens, userToken)))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
@@ -169,7 +163,6 @@ public class ThrottlingServiceTest {
 
         ConcurrentMap<Boolean, Long> collect = IntStream.rangeClosed(1, realRps)
                 .parallel()
-//                .peek(i -> System.out.println("Current index: " + i))
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(UUID.randomUUID().toString()))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
@@ -230,8 +223,6 @@ public class ThrottlingServiceTest {
     }
 
     private String getToken(List<String> slaTokens, int index) {
-        int currentIndex = (slaTokens.size() - 1) & index;
-        System.out.println("Current index: " + currentIndex);
         return slaTokens.get((slaTokens.size() - 1) & index);
     }
 }

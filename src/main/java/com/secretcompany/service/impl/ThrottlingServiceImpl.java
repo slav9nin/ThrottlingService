@@ -23,11 +23,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.secretcompany.config.ThrottlingConfiguration.CUSTOM_FORK_JOIN_POOL;
 import static com.secretcompany.service.ThrottlingConstants.AUTHORIZED_USER_ID;
+import static com.secretcompany.service.ThrottlingConstants.LRU_MAX_CACHE_CAPACITY;
 import static com.secretcompany.service.ThrottlingConstants.UNAUTHORIZED_USER_ID;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singleton;
@@ -59,13 +62,19 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     // Also, we want to use it as a CACHE. LRU cache (LinkedHashMap) is appropriate here.
 
     // TODO LinkedHashMap can be used as LRU Cache. But we don't have a concurrent version. Consider using org.springframework.cache.concurrent.ConcurrentMapCache
-//    private final Map<String, UserData> tokenToUserDataMap = Collections.synchronizedMap(createLRUCache(LRU_MAX_CACHE_CAPACITY));
     private final Map<String, UserData> tokenToUserDataMap = new ConcurrentHashMap<>();
+//    private final Map<String, UserData> tokenToUserDataMap = createLRUCache(LRU_MAX_CACHE_CAPACITY);
 
     //to support RPS by UserName
     private final Map<String, Set<UserData>> userToUserDataSetMap = new ConcurrentHashMap<>();
+    private final Map<String, Sla> tokenToSlaMap = new ConcurrentHashMap<>();
 
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
+
+    //These locks not for guarding ConcurrentMap but for supporting request ordering
+    private final Lock unAuthorizedUserLock = new ReentrantLock(false);
+    private final Lock authorizedUserLock = new ReentrantLock(false);
+    private final Lock slaUserLock = new ReentrantLock(false);
 
     public ThrottlingServiceImpl(int guestRps, SlaService slaService) {
         this.guestRps = guestRps;
@@ -87,12 +96,12 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                 .filter(StringUtils::isNotBlank);
 
         if (userToken.isPresent()) {
-            //compute onl if we have Sla for token, otherwise return null. Null for authorized users which still does not have Sla
+            //compute only if we have Sla for token, otherwise return null. Null for authorized users which still does not have Sla
             UserData userData = tokenToUserDataMap.computeIfPresent(token, (t, ud) -> {
                 if (ud.getSecondId() == secondFromEpoch) {
-                    return new UserData(secondFromEpoch, ud.getSla(), ud.getRps() - 1, ud.getTokens());
+                    return new UserData(ud.getSecondId(), ud.getSla(), ud.getRps() - 1, ud.getTokens());
                 } else {
-                    return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps(), ud.getTokens());
+                    return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps() - 1, ud.getTokens());
                 }
             });
 
@@ -100,115 +109,115 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             checkSlaService(token);
 
             if (Optional.ofNullable(userData).isPresent()) {
-
-
                 // retrieve user from Sla and then retrieve all entries by UserId.
-                @NonNull Set<UserData> userTokenData = userToUserDataSetMap.compute(userData.getSla().getUser(), (k, v) -> {
-                    if (CollectionUtils.isEmpty(v)) {
-                        Sla sla = userData.getSla();
-                        long secondId = userData.getSecondId();
-                        long rps = userData.getRps();
+                slaUserLock.lock();
+                try {
+                    @NonNull UserData slaData = tokenToUserDataMap.get(token);
+                    @NonNull Set<UserData> userTokenData = userToUserDataSetMap.compute(slaData.getSla().getUser(), (k, v) -> {
+                        if (CollectionUtils.isEmpty(v)) {
+                            Sla sla = slaData.getSla();
+                            long secondId = slaData.getSecondId();
+                            long rps = slaData.getRps();
 //                        long rps = sla.getRps();
-                        UserData data = new UserData(secondId, sla, rps, userData.getTokens());
-                        return ImmutableSet.of(data);
-                    } else {
-                        // already have Set<UserData>
-                        //userData can already be in userToUserDataSetMap. We need to check it.
-                        Sla sla = userData.getSla();
-                        long secondId = userData.getSecondId();
-                        long rps = userData.getRps();
-                        UserData data = new UserData(secondId, sla, rps, userData.getTokens());
-                        if (v.contains(data)) {
-                            return v;
+                            UserData data = new UserData(secondId, sla, rps, slaData.getTokens());
+                            return ImmutableSet.of(data);
+                        } else {
+                            // already have Set<UserData>
+                            //userData can already be in userToUserDataSetMap. We need to check it.
+                            Sla sla = slaData.getSla();
+                            long secondId = slaData.getSecondId();
+                            long rps = slaData.getRps();
+                            UserData data = new UserData(secondId, sla, rps, slaData.getTokens());
+                            if (v.contains(data)) {
+                                return v;
+                            }
+                            HashSet<UserData> existingSet = new HashSet<>(v);
+                            existingSet.add(data);
+                            return ImmutableSet.copyOf(existingSet);
                         }
-                        HashSet<UserData> existingSet = new HashSet<>(v);
-                        existingSet.add(data);
-                        return ImmutableSet.copyOf(existingSet);
+                    });
+                    // iterate through userTokenData and count RPS by UserName!
+                    Map<Sla, Set<UserData>> collect = userTokenData.stream()
+                            .collect(Collectors.groupingBy(UserData::getSla, Collectors.mapping(Function.identity(), toSet())));
+                    if (collect.size() > 1) {
+                        throw new MultipleValuesUserDataException();
                     }
-                });
-                // iterate through userTokenData and count RPS by UserName!
-                Map<Sla, Set<UserData>> collect = userTokenData.stream()
-                        .collect(Collectors.groupingBy(UserData::getSla, Collectors.mapping(Function.identity(), toSet())));
-                if (collect.size() > 1) {
-                    throw new MultipleValuesUserDataException();
+
+                    Set<UserData> userDataSet = collect.values().stream().flatMap(Collection::stream).collect(toSet());
+
+                    // each token of the same user has own RPS
+                    final long existingRpsThroughAllTokenRps = userDataSet.stream()
+                            .mapToLong(UserData::getRps)
+                            .sum();
+
+                    //count of existing tokens per user
+                    int size = userDataSet.size();
+                    //max Sla RPS
+                    final long maxRpsByUser = userData.getSla().getRps();
+
+                    long total = maxRpsByUser * size;
+
+                    return total - existingRpsThroughAllTokenRps <= maxRpsByUser;
+                } finally {
+                    slaUserLock.unlock();
                 }
-
-                Set<UserData> userDataSet = collect.values().stream().flatMap(Collection::stream).collect(toSet());
-
-                // each token of the same user has own RPS
-                final long existingRpsThroughAllTokenRps = userDataSet.stream()
-                        .mapToLong(UserData::getRps)
-                        .sum();
-
-                //Sla RPS
-                long rps = userData.getSla().getRps();
-                //count of existing tokens per user
-                int size = userDataSet.size();
-                //max Sla RPS
-                final long maxRpsByUser = userData.getSla().getRps();
-
-                long total = maxRpsByUser * size;
-
-                return total - existingRpsThroughAllTokenRps <= rps;
 
             } else {
                 // userData == null
                 // computedData always is not null
-                @NonNull UserData computedData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> {
-                    long secondId = v.getSecondId();
-                    if (secondId == secondFromEpoch) {
-                        // within same second
-                        Set<String> tokens = new HashSet<>(v.getTokens());
-                        tokens.add(token);
-                        Set<String> collectedTokens = ImmutableSet.copyOf(tokens);
-                        long existingRps = v.getRps();
-                        return new UserData(secondFromEpoch, v.getSla(), existingRps - 1, collectedTokens);
-                    } else {
-                        // new second
-                        Set<String> tokens = new HashSet<>(v.getTokens());
-                        tokens.add(token);
-                        Set<String> collectedTokens = ImmutableSet.copyOf(tokens);
-                        long rps = v.getSla().getRps();
-                        return authorizedDefaultSla(secondFromEpoch, rps, collectedTokens);
-                    }
-                });
-                // all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
-                return checkRemainingRps(computedData) >= 0;
+                authorizedUserLock.lock();// not for guarding map but for fair order for incoming request
+                try {
+                    @NonNull UserData computedData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> {
+                        long secondId = v.getSecondId();
+                        if (secondId == secondFromEpoch) {
+                            // within same second
+                            return new UserData(secondId, v.getSla(), v.getRps() - 1, v.getTokens());
+                        } else {
+                            // new second
+                            return authorizedDefaultSla(secondFromEpoch, v.getSla().getRps() - 1, v.getTokens());
+                        }
+                    });
+                    // all authorized but without Sla users should compete between each other. Default RPS == GuestRPS
+                    return checkRemainingRps(computedData) >= 0;
+                } finally {
+                    authorizedUserLock.unlock();
+                }
             }
 
         } else {
-            System.out.println(Thread.currentThread().getName());
             // Token is absent. All unauthorized users compete for GuestRPS.
             // UserData always should not be null.
-            @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> {
-                long secondId = v.getSecondId();
-                if (secondId == secondFromEpoch) {
-                    // within same second
-                    long existingRps = v.getRps();
-                    return new UserData(secondFromEpoch, v.getSla(), existingRps - 1, emptySet());
-                } else {
-                    // new second
-                    return createGuestSla(secondFromEpoch);
-                }
-            });
+            unAuthorizedUserLock.lock(); // not for guarding map but for fair order for incoming request
+            try {
+                @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> {
+                    long secondId = v.getSecondId();
+                    if (secondId == secondFromEpoch) {
+                        // within same second
+                        return new UserData(secondId, v.getSla(), v.getRps() - 1, emptySet());
+                    } else {
+                        // new second
+//                        return createGuestSla(secondFromEpoch);
+                        return new UserData(secondFromEpoch, v.getSla(), v.getSla().getRps() - 1, emptySet());
+                    }
+                });
 
-            return checkRemainingRps(newUserData) >= 0;
+                return checkRemainingRps(newUserData) >= 0;
+            } finally {
+                unAuthorizedUserLock.unlock();
+            }
         }
     }
 
     private void checkSlaService(String token) {
-        requestToSlaPerToken.computeIfAbsent(token, (t) -> slaService.getSlaByToken(token))
+        requestToSlaPerToken.computeIfAbsent(token, (t) -> CompletableFuture.completedFuture(0).thenComposeAsync((v) -> slaService.getSlaByToken(token), CUSTOM_FORK_JOIN_POOL))
                 .thenAcceptAsync(sla -> {
                     if (Objects.isNull(sla)) {
                         //Sla Service does not have any mappings for this token
                         return;
                     }
-
                     //when SlaService returns RealUserName we should
                     //  1. add entry to tokenToUserDataMap and then
-                    //  2. remove token from DUMMY_KEY_FOR_AUTHORIZED_USERS!!!
-                    //  Order matters!
-                    //  3. Cleanup requestToSlaPerToken to avoid memory leak.
+                    //  2. Cleanup requestToSlaPerToken to avoid memory leak.
 
                     // here we update tokenToUserDataMap twice without any locking, but it's ok, due to order and key which we are using!
 
@@ -227,16 +236,8 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                         }
                     });
 
-                    //2. remove from tokenToUserDataMap by DUMMY_KEY_FOR_AUTHORIZED_USERS key this token from set of tokens
-                    tokenToUserDataMap.computeIfPresent(DUMMY_KEY_FOR_AUTHORIZED_USERS, (k, v) -> {
-                        Set<String> tokens = v.getTokens().stream()
-                                .filter(t -> !Objects.equals(token, t))
-                                .collect(toSet());
-                        return new UserData(v.getSecondId(), v.getSla(), v.getRps(), ImmutableSet.copyOf(tokens));
-                    });
-
                 }, CUSTOM_FORK_JOIN_POOL)
-                // 3. cleanup request pool after completion to avoid memory leak.
+                // 2. cleanup request pool after completion to avoid memory leak.
                 .thenRunAsync(() -> requestToSlaPerToken.remove(token), CUSTOM_FORK_JOIN_POOL);
     }
 
@@ -321,6 +322,8 @@ public class ThrottlingServiceImpl implements ThrottlingService {
         private final Set<String> tokens;
 
         public UserData(long secondId, Sla sla, long rps, Set<String> tokens) {
+            Objects.requireNonNull(sla, "Sla should not be null");
+            Objects.requireNonNull(tokens, "token Set should not be null");
             this.secondId = secondId;
             this.sla = sla;
             this.rps = rps;
@@ -349,12 +352,12 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             UserData userData = (UserData) o;
-            return secondId == userData.secondId && rps == userData.rps && com.google.common.base.Objects.equal(tokens, userData.tokens);
+            return secondId == userData.secondId && rps == userData.rps && Objects.equals(tokens, userData.tokens);
         }
 
         @Override
         public int hashCode() {
-            return com.google.common.base.Objects.hashCode(secondId, rps, tokens);
+            return Objects.hash(secondId, rps, tokens);
         }
     }
 }
