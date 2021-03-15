@@ -42,6 +42,12 @@ import static java.util.stream.Collectors.toSet;
  * 1. For particular Token we don't have ongoing request to SlaService.
  * 2. On each request to ThrottlingService if it satisfies the previous statement.
  */
+
+//Not production ready yet.
+    //1. Unbound Cache (ConcurrentHashMap) may produce OutOfMemoryError
+    //2. Do not handle if SlaService change `accountId`. This requires remapping. Assume it never happens.
+    //3. Send SlaService request on each token (if no one exists). We can improve it and send by userId. But it can cost. If there are a lot of users with one token.
+
 public class ThrottlingServiceImpl implements ThrottlingService {
     private static final String DUMMY_KEY = UUID.randomUUID().toString();
     private static final String DUMMY_KEY_FOR_AUTHORIZED_USERS = UUID.randomUUID().toString();
