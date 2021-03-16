@@ -2,7 +2,6 @@ package com.secretcompany.service.impl;
 
 import com.secretcompany.dto.Sla;
 import com.secretcompany.mock.EmptySlaService;
-import com.secretcompany.mock.SlaServiceStubWithDelay;
 import org.assertj.core.util.Lists;
 import org.junit.Before;
 import org.junit.Test;
