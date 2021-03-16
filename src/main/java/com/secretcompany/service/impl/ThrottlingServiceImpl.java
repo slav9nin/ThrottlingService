@@ -75,7 +75,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
 
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
 
-    public ThrottlingServiceImpl(int guestRps, SlaService slaService) {
+    public ThrottlingServiceImpl(int guestRps, final SlaService slaService) {
         this.guestRps = guestRps;
         this.systemClock = Clock.systemUTC();
         this.slaService = slaService;
