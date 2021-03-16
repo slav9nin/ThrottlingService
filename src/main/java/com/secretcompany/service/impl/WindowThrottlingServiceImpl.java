@@ -61,6 +61,10 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
 
         if (userToken.isPresent()) {
 
+            //request to SlaService
+            checkSlaService(token);
+
+            //retrieve Sla
             Sla sla = tokenSlaMap.get(token);
 
             if (Objects.nonNull(sla)) {
@@ -76,26 +80,27 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
         }
     }
 
-    private boolean checkRequestIsAllowed(long current, long end, String token, long sla) {
-        @NonNull TimeWindow currentWindow = tokenToTimeWindowMap.compute(token, computeTimedWindow(current, end));
+    private boolean checkRequestIsAllowed(long current, long end, String token, long rps) {
+        @NonNull TimeWindow currentWindow = tokenToTimeWindowMap.compute(token, computeTimedWindow(current, end, rps));
         return currentWindow.getRps() >= 0;
     }
 
-    private BiFunction<String, TimeWindow, TimeWindow> computeTimedWindow(long current, long end) {
+    private BiFunction<String, TimeWindow, TimeWindow> computeTimedWindow(long current, long end, long rps) {
         return (tokenId, window) -> {
             if (Objects.nonNull(window)) {
                 //window is already present.
                 //check do we still in this window.(current time within start-end of window). If yes -> decrement RPS
                 if (current < window.getEndMillis()) {
+                    //here we should support existing RPS. If Sla comes with new RPS we will support it in the next window
                     return new TimeWindow(window.getStartMillis(), window.getEndMillis(), window.getRps() - 1);
                 } else {
                     //if not - means we start new window
-                    return new TimeWindow(current, end, guestRps - 1);
+                    return new TimeWindow(current, end, rps - 1);
                 }
 
             } else {
                 //window isn't created yet. create a new one and decrement default RPS
-                return new TimeWindow(current, end, guestRps - 1);
+                return new TimeWindow(current, end, rps - 1);
             }
         };
     }

@@ -6,9 +6,9 @@ import java.util.Objects;
 public class TimeWindow {
     private final long startMillis;
     private final long endMillis;
-    private final int rps;
+    private final long rps;
 
-    public TimeWindow(long startMillis, long endMillis, int rps) {
+    public TimeWindow(long startMillis, long endMillis, long rps) {
         this.startMillis = startMillis;
         this.endMillis = endMillis;
         this.rps = rps;
@@ -22,7 +22,7 @@ public class TimeWindow {
         return endMillis;
     }
 
-    public int getRps() {
+    public long getRps() {
         return rps;
     }
 
