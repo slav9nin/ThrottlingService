@@ -38,6 +38,9 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
     private final Map<String, Sla> tokenSlaMap = new ConcurrentHashMap<>();
 
+    //support users with several tokens
+    private final Map<String, TimeWindow> slaUserToWindowMap = new ConcurrentHashMap<>();
+
     private Clock systemClock;
     private SlaService slaService;
 
@@ -68,7 +71,9 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
             Sla sla = tokenSlaMap.get(token);
 
             if (Objects.nonNull(sla)) {
-                return checkRequestIsAllowed(current, end, token, sla.getRps());
+//                return checkRequestIsAllowed(current, end, token, sla.getRps());
+                //todo
+                return checkRequestIsAllowedForSlaUser(current, end, sla.getUser(), sla.getRps());
             } else {
                 //Sla hasn't arrived yet
                 return checkRequestIsAllowed(current, end, DUMMY_KEY_FOR_AUTHORIZED_USERS, guestRps);
@@ -78,6 +83,27 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
             // computeIfAbsent current window
             return checkRequestIsAllowed(current, end, DUMMY_KEY, guestRps);
         }
+    }
+
+    private boolean checkRequestIsAllowedForSlaUser(long current, long end, String user, long rps) {
+        @NonNull TimeWindow currentWindow = slaUserToWindowMap.compute(user, (tokenId, window) -> {
+            if (Objects.nonNull(window)) {
+                //window is already present.
+                //check do we still in this window.(current time within start-end of window). If yes -> decrement RPS
+                if (current < window.getEndMillis()) {
+                    //here we should support existing RPS. If Sla comes with new RPS we will support it in the next window
+                    return new TimeWindow(window.getStartMillis(), window.getEndMillis(), window.getRps() - 1);
+                } else {
+                    //if not - means we start new window
+                    return new TimeWindow(current, end, rps - 1);
+                }
+
+            } else {
+                //window isn't created yet. create a new one and decrement default RPS
+                return new TimeWindow(current, end, rps - 1);
+            }
+        });
+        return currentWindow.getRps() >= 0;
     }
 
     private boolean checkRequestIsAllowed(long current, long end, String token, long rps) {
