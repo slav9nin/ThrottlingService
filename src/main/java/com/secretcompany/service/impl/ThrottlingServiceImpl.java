@@ -102,30 +102,14 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             // do request to SlaService if no one exists for the same token.
             checkSlaService(token);
 
-            if (Optional.ofNullable(userData).isPresent()) {
+            if (Objects.nonNull(userData)) {
                 // retrieve user from Sla and then retrieve all entries by UserId.
-                @NonNull UserTokenInfo userTokenInfo = userToUserDataMap.compute(userData.getSla().getUser(), (k, v) -> {
-                    if (Objects.isNull(v)) {
-                        return new UserTokenInfo(userData.getSla().getUser(), ImmutableSet.of(token));
-                    } else {
-                        if (v.getTokens().stream().anyMatch(t -> Objects.equals(t, token))) {
-                            //the same token
-                            return new UserTokenInfo(userData.getSla().getUser(), v.getTokens());
-                        }
-                        return new UserTokenInfo(userData.getSla().getUser(), ImmutableSet.<String>builder().addAll(v.getTokens()).add(token).build());
-                    }
-                });
+                @NonNull UserTokenInfo userTokenInfo = userToUserDataMap.compute(userData.getSla().getUser(), (k, v) -> computeUserTokenInfo(token, userData, v));
                 final Set<UserData> allTokensByUser = new HashSet<>();
                 for (String usersToken: userTokenInfo.getTokens()) {
                     if (Objects.equals(usersToken, token)) {
                         //compute rps only for current token.
-                        @NonNull UserData slaData = tokenToUserDataMap.computeIfPresent(usersToken, (t, ud) -> {
-                            if (ud.getSecondId() == secondFromEpoch) {
-                                return new UserData(ud.getSecondId(), ud.getSla(), ud.getRps() - 1, ud.getToken());
-                            } else {
-                                return new UserData(secondFromEpoch, ud.getSla(), ud.getSla().getRps() - 1, ud.getToken());
-                            }
-                        });
+                        @NonNull UserData slaData = tokenToUserDataMap.computeIfPresent(usersToken, (t, ud) -> computeUserData(secondFromEpoch, ud));
                         allTokensByUser.add(slaData);
                     } else {
                         @NonNull UserData slaData = tokenToUserDataMap.get(usersToken);
@@ -139,19 +123,7 @@ public class ThrottlingServiceImpl implements ThrottlingService {
                     throw new MultipleValuesUserDataException();
                 }
 
-                // each token of the same user has own RPS
-                final long existingRpsThroughAllTokenRps = allTokensByUser.stream()
-                        .mapToLong(UserData::getRps)
-                        .sum();
-
-                //count of existing tokens per user
-                int size = allTokensByUser.size();
-                //max Sla RPS
-                final long maxRpsByUser = userData.getSla().getRps();
-
-                long total = maxRpsByUser * size;
-
-                return total - existingRpsThroughAllTokenRps <= maxRpsByUser;
+                return countUserRpsThroughAllTokens(userData, allTokensByUser);
             } else {
                 // userData == null
                 // computedData always is not null
@@ -166,6 +138,34 @@ public class ThrottlingServiceImpl implements ThrottlingService {
             @NonNull UserData newUserData = tokenToUserDataMap.computeIfPresent(DUMMY_KEY, (k, v) -> computeUserData(secondFromEpoch, v));
 
             return checkRemainingRps(newUserData) >= 0;
+        }
+    }
+
+    private boolean countUserRpsThroughAllTokens(UserData userData, Set<UserData> allTokensByUser) {
+        // each token of the same user has own RPS
+        final long existingRpsThroughAllTokenRps = allTokensByUser.stream()
+                .mapToLong(UserData::getRps)
+                .sum();
+
+        //count of existing tokens per user
+        int size = allTokensByUser.size();
+        //max Sla RPS
+        final long maxRpsByUser = userData.getSla().getRps();
+
+        long total = maxRpsByUser * size;
+
+        return total - existingRpsThroughAllTokenRps <= maxRpsByUser;
+    }
+
+    private UserTokenInfo computeUserTokenInfo(String token, UserData userData, UserTokenInfo v) {
+        if (Objects.isNull(v)) {
+            return new UserTokenInfo(userData.getSla().getUser(), ImmutableSet.of(token));
+        } else {
+            if (v.getTokens().stream().anyMatch(t -> Objects.equals(t, token))) {
+                //the same token
+                return new UserTokenInfo(userData.getSla().getUser(), v.getTokens());
+            }
+            return new UserTokenInfo(userData.getSla().getUser(), ImmutableSet.<String>builder().addAll(v.getTokens()).add(token).build());
         }
     }
 
