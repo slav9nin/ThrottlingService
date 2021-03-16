@@ -34,10 +34,8 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     private static final String DUMMY_KEY_FOR_AUTHORIZED_USERS = UUID.randomUUID().toString();
 
     private final int guestRps;
-    private final Map<String, TimeWindow> tokenToTimeWindowMap = new ConcurrentHashMap<>();
+    private final Map<String, TimeWindow> userToTimeWindowMap = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
-
-    //key may be as token (for non authorized or without sla users) or can be userName (sla users)
     private final Map<String, Sla> tokenSlaMap = new ConcurrentHashMap<>();
 
     private Clock systemClock;
@@ -83,7 +81,7 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     }
 
     private boolean checkRequestIsAllowed(long current, long end, String token, long rps) {
-        @NonNull TimeWindow currentWindow = tokenToTimeWindowMap.compute(token, computeTimedWindow(current, end, rps));
+        @NonNull TimeWindow currentWindow = userToTimeWindowMap.compute(token, computeTimedWindow(current, end, rps));
         return currentWindow.getRps() >= 0;
     }
 
@@ -136,16 +134,6 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     @VisibleForTesting
     void setSystemClock(Clock systemClock) {
         this.systemClock = systemClock;
-    }
-
-    @VisibleForTesting
-    Map<String, TimeWindow> getTokenToTimeWindowMap() {
-        return tokenToTimeWindowMap;
-    }
-
-    @VisibleForTesting
-    Map<String, Sla> getTokenSlaMap() {
-        return tokenSlaMap;
     }
 
     @VisibleForTesting
