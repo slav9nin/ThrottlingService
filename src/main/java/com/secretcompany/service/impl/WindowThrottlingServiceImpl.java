@@ -3,10 +3,9 @@ package com.secretcompany.service.impl;
 import com.google.common.annotations.VisibleForTesting;
 import com.secretcompany.dto.Sla;
 import com.secretcompany.dto.TimeWindow;
-import com.secretcompany.dto.UserData;
-import com.secretcompany.dto.UserTokenInfo;
 import com.secretcompany.service.SlaService;
 import com.secretcompany.service.ThrottlingService;
+import lombok.NonNull;
 import org.apache.commons.lang3.StringUtils;
 
 import java.time.Clock;
@@ -78,12 +77,8 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     }
 
     private boolean checkRequestIsAllowed(long current, long end, String token, long sla) {
-        TimeWindow currentWindow = tokenToTimeWindowMap.compute(token, computeTimedWindow(current, end));
-        //If currentWindow is null means we went outside the window
-        //if not null just check remaining RPS.
-        return Optional.ofNullable(currentWindow)
-                .filter(cw -> cw.getRps() >= 0)
-                .isPresent();
+        @NonNull TimeWindow currentWindow = tokenToTimeWindowMap.compute(token, computeTimedWindow(current, end));
+        return currentWindow.getRps() >= 0;
     }
 
     private BiFunction<String, TimeWindow, TimeWindow> computeTimedWindow(long current, long end) {
@@ -94,8 +89,8 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
                 if (current < window.getEndMillis()) {
                     return new TimeWindow(window.getStartMillis(), window.getEndMillis(), window.getRps() - 1);
                 } else {
-                    //if not - return null. On the next iteration it will be re-created with new permissions.
-                    return null;
+                    //if not - means we start new window
+                    return new TimeWindow(current, end, guestRps - 1);
                 }
 
             } else {

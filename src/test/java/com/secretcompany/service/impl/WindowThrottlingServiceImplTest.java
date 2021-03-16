@@ -123,16 +123,17 @@ public class WindowThrottlingServiceImplTest {
         assertThat(throttlingService.getRequestToSlaPerToken()).isEmpty();
 
         //simulate that time went through 999 ml. < 1 s.
-        throttlingService.setSystemClock(plus999Clock);
+        throttlingService.setSystemClock(plus1000Clock);
 
-        collect = IntStream.rangeClosed(1, REAL_RPS)
+        collect = IntStream.rangeClosed(1, GUEST_RPS + 1)
                 .parallel()
                 .mapToObj(userToken -> throttlingService.isRequestAllowed(null))
                 .collect(Collectors.groupingByConcurrent(val -> val, Collectors.counting()));
 
         assertThat(collect).isNotEmpty();
-        assertThat(collect).hasSize(1);
-        assertThat(collect.get(true)).isEqualTo(REAL_RPS);
+        assertThat(collect).hasSize(2);
+        assertThat(collect.get(true)).isEqualTo(GUEST_RPS);
+        assertThat(collect.get(false)).isEqualTo(1);
 
         assertThat(throttlingService.getRequestToSlaPerToken()).isEmpty();
     }
