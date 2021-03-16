@@ -1,5 +1,6 @@
 package com.secretcompany.service.impl;
 
+import com.secretcompany.dto.UserData;
 import com.secretcompany.mock.EmptySlaService;
 import com.secretcompany.mock.SlaServiceStubWithDelay;
 import org.assertj.core.util.Lists;
@@ -226,11 +227,11 @@ public class ThrottlingServiceTest {
         //EmptySlaService to prevent updating Sla in ThrottlingService.
         final List<String> slaTokens = Lists.newArrayList(TOKEN_1_1, TOKEN_1_2, TOKEN_2_1, TOKEN_2_2);
 
-        Map<String, ThrottlingServiceImpl.UserData> map = new ConcurrentHashMap<>();
-        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS - 2, TOKEN_1_1));
-        map.put(TOKEN_1_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS - 2, TOKEN_1_2));
-        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS - 2, TOKEN_2_1));
-        map.put(TOKEN_2_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS - 2, TOKEN_2_2));
+        Map<String, UserData> map = new ConcurrentHashMap<>();
+        map.put(TOKEN_1_1, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS - 2, TOKEN_1_1));
+        map.put(TOKEN_1_2, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS - 2, TOKEN_1_2));
+        map.put(TOKEN_2_1, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS - 2, TOKEN_2_1));
+        map.put(TOKEN_2_2, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS - 2, TOKEN_2_2));
 
         throttlingService = new ThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
         throttlingService.getTokenToUserDataMap().forEach(map::put);
@@ -271,11 +272,11 @@ public class ThrottlingServiceTest {
         int index = 0;
         System.out.println("Second :" + Instant.now(fixedClock).getEpochSecond());
 
-        Map<String, ThrottlingServiceImpl.UserData> map = new ConcurrentHashMap<>();
-        map.put(TOKEN_1_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS, TOKEN_1_1));
-        map.put(TOKEN_1_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS, TOKEN_1_2));
-        map.put(TOKEN_2_1, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS, TOKEN_2_1));
-        map.put(TOKEN_2_2, new ThrottlingServiceImpl.UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS, TOKEN_2_2));
+        Map<String, UserData> map = new ConcurrentHashMap<>();
+        map.put(TOKEN_1_1, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS, TOKEN_1_1));
+        map.put(TOKEN_1_2, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_1_SLA, USER_1_MAX_RPS, TOKEN_1_2));
+        map.put(TOKEN_2_1, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS, TOKEN_2_1));
+        map.put(TOKEN_2_2, new UserData(Instant.now(fixedClock).getEpochSecond(), USER_2_SLA, USER_2_MAX_RPS, TOKEN_2_2));
 
         throttlingService = new ThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
         throttlingService.getTokenToUserDataMap().forEach(map::put);

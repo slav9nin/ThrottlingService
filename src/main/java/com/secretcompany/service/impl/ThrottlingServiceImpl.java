@@ -3,6 +3,8 @@ package com.secretcompany.service.impl;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 import com.secretcompany.dto.Sla;
+import com.secretcompany.dto.UserData;
+import com.secretcompany.dto.UserTokenInfo;
 import com.secretcompany.exception.MultipleValuesUserDataException;
 import com.secretcompany.exception.NullableUserDataException;
 import com.secretcompany.service.SlaService;
@@ -266,88 +268,5 @@ public class ThrottlingServiceImpl implements ThrottlingService {
     @VisibleForTesting
     Map<String, CompletableFuture<Sla>> getRequestToSlaPerToken() {
         return requestToSlaPerToken;
-    }
-
-    /**
-     * Immutable.
-     */
-    static class UserData {
-        private final long secondId;
-        private final Sla sla;
-        private final long rps;
-        private final String token;
-
-        public UserData(long secondId, Sla sla, long rps, String token) {
-            Objects.requireNonNull(sla, "Sla should not be null");
-            Objects.requireNonNull(token, "token Set should not be null");
-            this.secondId = secondId;
-            this.sla = sla;
-            this.rps = rps;
-            this.token = token;
-        }
-
-        public long getSecondId() {
-            return secondId;
-        }
-
-        public Sla getSla() {
-            return sla;
-        }
-
-        public long getRps() {
-            return rps;
-        }
-
-        public String getToken() {
-            return token;
-        }
-
-        //except Sla and UserId
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            UserData userData = (UserData) o;
-            return secondId == userData.secondId && rps == userData.rps && Objects.equals(token, userData.token);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(secondId, rps, token);
-        }
-    }
-
-    static class UserTokenInfo {
-        private final String userName;
-        private final Set<String> tokens;
-
-        UserTokenInfo(String userName, Set<String> tokens) {
-            Objects.requireNonNull(userName, "UserName is required");
-            Objects.requireNonNull(tokens, "tokenSet is required");
-            this.userName = userName;
-            this.tokens = tokens;
-        }
-
-        public String getUserName() {
-            return userName;
-        }
-
-        public Set<String> getTokens() {
-            return tokens;
-        }
-
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            UserTokenInfo that = (UserTokenInfo) o;
-            return Objects.equals(userName, that.userName) && Objects.equals(tokens, that.tokens);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(userName, tokens);
-        }
     }
 }
