@@ -59,7 +59,6 @@ public class WindowThrottlingServiceImplTest {
         plus999Clock = Clock.fixed(plus999Instant, ZoneId.systemDefault());
         plus1000Clock = Clock.fixed(plus1000Instant, ZoneId.systemDefault());
 
-//        throttlingService = new WindowThrottlingServiceImpl(GUEST_RPS, new SlaServiceStubWithDelay(SLA_DELAY, false));
         throttlingService = new WindowThrottlingServiceImpl(GUEST_RPS, new EmptySlaService());
     }
 
