@@ -34,12 +34,12 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     private static final String AUTHORIZED_USERS_WITHOUT_SLA = UUID.randomUUID().toString();
 
     private final int guestRps;
+    private final SlaService slaService;
     private final Map<String, TimeWindow> userToTimeWindowMap = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<Sla>> requestToSlaPerToken = new ConcurrentHashMap<>();
     private final Map<String, Sla> tokenSlaMap = new ConcurrentHashMap<>();
 
     private Clock systemClock;
-    private SlaService slaService;
 
     public WindowThrottlingServiceImpl(final int guestRps, final SlaService slaService) {
         this.guestRps = guestRps;
