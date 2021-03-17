@@ -86,7 +86,7 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     }
 
     private BiFunction<String, TimeWindow, TimeWindow> computeTimedWindow(long current, long end, long rps) {
-        return (tokenId, window) -> {
+        return (userId, window) -> {
             if (Objects.nonNull(window)) {
                 //window is already present.
                 //check do we still in this window.(current time within start-end of window). If yes -> decrement RPS
