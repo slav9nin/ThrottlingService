@@ -50,10 +50,10 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
     @Override
     public boolean isRequestAllowed(String token) {
         //get current millis
-        Instant now = Instant.now(systemClock);
-        long current = now.toEpochMilli();
+        final Instant now = Instant.now(systemClock);
+        final long current = now.toEpochMilli();
         //determine the end of the timed window
-        long end = now.plusMillis(1000L).toEpochMilli();
+        final long end = now.plusMillis(1000L).toEpochMilli();
 
         // check current token is blank
         Optional<String> userToken = Optional.ofNullable(token)
