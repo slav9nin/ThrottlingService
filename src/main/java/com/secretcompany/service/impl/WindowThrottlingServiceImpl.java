@@ -30,8 +30,8 @@ import static com.secretcompany.config.ThrottlingConfiguration.CUSTOM_FORK_JOIN_
  * Authorized user can have several tokens. One SLA. Each token share the same SLA.
  */
 public class WindowThrottlingServiceImpl implements ThrottlingService {
-    private static final String DUMMY_KEY = UUID.randomUUID().toString();
-    private static final String DUMMY_KEY_FOR_AUTHORIZED_USERS = UUID.randomUUID().toString();
+    private static final String UNAUTHORIZED_USERS = UUID.randomUUID().toString();
+    private static final String AUTHORIZED_USERS_WITHOUT_SLA = UUID.randomUUID().toString();
 
     private final int guestRps;
     private final Map<String, TimeWindow> userToTimeWindowMap = new ConcurrentHashMap<>();
@@ -71,12 +71,12 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
                 return checkRequestIsAllowed(current, end, sla.getUser(), sla.getRps());
             } else {
                 //Sla hasn't arrived yet
-                return checkRequestIsAllowed(current, end, DUMMY_KEY_FOR_AUTHORIZED_USERS, guestRps);
+                return checkRequestIsAllowed(current, end, AUTHORIZED_USERS_WITHOUT_SLA, guestRps);
             }
         } else {
             // Token is absent. All unauthorized users compete for GuestRPS.
             // computeIfAbsent current window
-            return checkRequestIsAllowed(current, end, DUMMY_KEY, guestRps);
+            return checkRequestIsAllowed(current, end, UNAUTHORIZED_USERS, guestRps);
         }
     }
 
