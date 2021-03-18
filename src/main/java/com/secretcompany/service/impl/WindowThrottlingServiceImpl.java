@@ -24,10 +24,9 @@ import static com.secretcompany.config.ThrottlingConfiguration.CUSTOM_FORK_JOIN_
 /**
  * 1. No token -> UnAuthorized Users. All compete for UnAuthorized GuestRPS
  * 2. Token, No Sla -> Authorized Users w/o SLA. All these users compete for Authorized GuestRPS.
- * 3. Token and Sla -> Welcome on board.
+ * 3. Token and Sla -> Welcome on board. Each user has own RPS.
  *
- *
- * Authorized user can have several tokens. One SLA. Each token share the same SLA.
+ * Authorized user can have several tokens.
  */
 public class WindowThrottlingServiceImpl implements ThrottlingService {
     private static final String UNAUTHORIZED_USERS = UUID.randomUUID().toString();
@@ -68,14 +67,14 @@ public class WindowThrottlingServiceImpl implements ThrottlingService {
             Sla sla = tokenSlaMap.get(token);
 
             if (Objects.nonNull(sla)) {
+                //Check particular user's Sla
                 return checkRequestIsAllowed(current, end, sla.getUser(), sla.getRps());
             } else {
-                //Sla hasn't arrived yet
+                //Sla hasn't arrived yet. Compete for default RPS
                 return checkRequestIsAllowed(current, end, AUTHORIZED_USERS_WITHOUT_SLA, guestRps);
             }
         } else {
             // Token is absent. All unauthorized users compete for GuestRPS.
-            // computeIfAbsent current window
             return checkRequestIsAllowed(current, end, UNAUTHORIZED_USERS, guestRps);
         }
     }
